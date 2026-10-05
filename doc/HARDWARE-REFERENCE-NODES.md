@@ -88,7 +88,7 @@ Un dispositivo puede pertenecer a más de una categoría.
 | Display táctil       | ESP32-S3          | SPI/RGB + I2C                |
 | Cámara               | ESP32-S3          | Camera interface             |
 | IA local             | ESP32-S3          | Camera + PSRAM               |
-| Matter/Thread/Zigbee | ESP32-C6          | 802.15.4 + Wi-Fi             |
+| Matter/Thread/Zigbee | ESP32-C6          | 802.15.4 + Ethernet/Wi-Fi    |
 | Gateway              | ESP32-S3/C6       | Ethernet + buses             |
 | Zone Controller      | ESP32-S3          | Ethernet/Wi-Fi               |
 | Central              | ESP32-S3 + PSRAM  | Ethernet + storage           |
