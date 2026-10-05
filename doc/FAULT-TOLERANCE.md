@@ -39,7 +39,7 @@ La instalación debe continuar funcionando con el mayor nivel de autonomía posi
 
 La arquitectura debe cumplir:
 
-> **Internet es opcional. El servidor central es opcional. La automatización local es obligatoria.**
+> **Internet es opcional. El servidor central es opcional (Explicación completa de Servidor Central en `docs/CENTRAL-ARCHITECTURE.md`). La automatización local es obligatoria.**
 
 Esto significa que:
 
