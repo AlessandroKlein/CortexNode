@@ -1,10 +1,19 @@
-# Plataforma de Automatización Distribuida
+# CortexNode
+
+## Plataforma de Automatización Distribuida
 
 > **Principio general:** Simple por fuera. Modular por dentro. Distribuida por diseño.
 
 Sistema modular de automatización basado principalmente en microcontroladores **ESP32**, desarrollado con **PlatformIO**, orientado a viviendas, oficinas, edificios, comercios, laboratorios, instalaciones agroindustriales e instalaciones industriales ligeras.
 
 El objetivo no es crear solamente un dispositivo IoT, sino desarrollar una **plataforma de automatización distribuida similar conceptualmente a un PLC modular**, donde múltiples dispositivos puedan comunicarse entre sí, compartir información, ejecutar automatizaciones y ser administrados desde una interfaz central.
+
+## Repositorios
+
+| Repositorio | URL |
+| --- | --- |
+| Código del proyecto | `git@github.com:AlessandroKlein/CortexNode.git` |
+| Documentación / wiki | `git@github.com:AlessandroKlein/Docs.git` |
 
 El sistema debe permitir comenzar con:
 
