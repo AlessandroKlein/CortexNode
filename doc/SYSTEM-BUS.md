@@ -1,479 +1,646 @@
 # SYSTEM-BUS.md
 
-# System Bus — Distributed Automation Platform
+# System Bus — Bus de Comunicación del Sistema
 
-> **Tipo:** Especificación de arquitectura y comunicación
-> **Estado:** Diseño
+> **Tipo:** Arquitectura / Convención
+> **Estado:** Planificación
 > **Versión:** 1.0.0
-> **Última actualización:** 2026-10-05
-> **Objetivo:** Definir el bus lógico de comunicación interno de la plataforma, independiente del medio físico de transporte.
+> **Fecha:** 2026-10-06
 
 ---
 
-# 1. Objetivo
+## 1. Propósito
 
-El `System Bus` es la capa lógica que permite que todos los componentes de la plataforma intercambien:
+El **System Bus** es la capa lógica de comunicación interna de la plataforma de automatización distribuida.
 
-* comandos;
-* estados;
-* eventos;
-* descubrimiento;
-* configuración;
-* diagnósticos;
-* sincronización;
-* información de disponibilidad;
-* información de salud;
-* mensajes de control.
+Su objetivo es permitir que:
 
-El System Bus **no es un protocolo físico**.
+* módulos;
+* dispositivos;
+* nodos;
+* controladores de zona;
+* Central;
+* sensores;
+* actuadores;
+* servicios;
+* automatizaciones;
+* escenas;
+* integraciones;
 
-No debe depender directamente de:
+puedan comunicarse entre sí **sin depender directamente del medio físico utilizado para transportar los mensajes**.
 
+La aplicación no debe necesitar saber si un mensaje viaja mediante:
+
+* memoria interna;
+* FreeRTOS Queue;
 * Wi-Fi;
 * Ethernet;
-* MQTT;
 * CAN;
-* CANopen;
 * RS485;
-* Modbus;
-* Zigbee;
+* Modbus RTU;
 * Thread;
 * Matter;
-* Bluetooth.
+* otro protocolo futuro.
 
-La arquitectura debe ser:
+La aplicación trabaja con una abstracción común:
 
 ```text
-                    SYSTEM BUS
-                        │
-        ┌───────────────┼────────────────┐
-        │               │                │
-      Wi-Fi          Ethernet          CAN
-        │               │                │
-      MQTT           TCP/UDP         CAN/CANopen
-        │               │                │
-      RS485        WebSocket        Modbus
+Aplicación
+    ↓
+System Bus API
+    ↓
+System Bus Core
+    ↓
+Transport Adapter
+    ↓
+Transporte físico/protocolo
 ```
-
-La lógica superior no debe saber qué transporte se está utilizando.
 
 ---
 
-# 2. Principio fundamental
+# 2. Objetivo arquitectónico
 
-> **La aplicación define qué quiere comunicar. El System Bus define cómo se entrega. El transporte físico define cómo viaja.**
+El principio fundamental es:
+
+> **La aplicación publica intenciones y consume eventos; el transporte es una implementación intercambiable.**
+
+Por lo tanto:
+
+```text
+                  SYSTEM BUS
+                      │
+        ┌─────────────┼─────────────┐
+        │             │             │
+      Local         Network       Field Bus
+        │             │             │
+   FreeRTOS       Ethernet/WiFi   CAN/RS485
+        │             │             │
+        └─────────────┼─────────────┘
+                      │
+                  Device Model
+```
+
+El cambio de transporte no debe obligar a modificar la lógica de negocio.
+
+---
+
+# 3. Relación con la arquitectura general
+
+El System Bus conecta las diferentes capas de la plataforma:
+
+```text
+┌──────────────────────────────────────────────┐
+│                  Aplicación                  │
+│                                              │
+│ Escenas / Automatizaciones / Funciones       │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│               Device Model                   │
+│                                              │
+│ Entity / Capability / State / Command/Event  │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│                SYSTEM BUS                    │
+│                                              │
+│ Routing / QoS / ACK / Retry / Correlation    │
+└──────────────────────┬───────────────────────┘
+                       │
+                       ▼
+┌──────────────────────────────────────────────┐
+│             Transport Adapter               │
+├────────┬────────┬────────┬────────┬──────────┤
+│ Local  │ Wi-Fi  │Ethernet│  CAN   │  RS485  │
+└────────┴────────┴────────┴────────┴──────────┘
+```
+
+---
+
+# 4. Principios fundamentales
+
+El System Bus deberá cumplir los siguientes principios.
+
+## 4.1 Independencia del transporte
+
+La aplicación nunca debe depender directamente de:
+
+```text
+GPIO
+CAN ID
+Modbus Register
+IP address
+MAC address
+SPI CS
+I²C address
+UART
+```
+
+Estos pertenecen a las capas inferiores.
+
+---
+
+## 4.2 Identidad lógica
+
+La comunicación debe utilizar identificadores lógicos:
+
+```text
+site_id
+zone_id
+device_id
+entity_id
+function_id
+group_id
+```
+
+Por ejemplo:
+
+```text
+light.living_room
+sensor.living_room.temperature
+switch.pool.pump
+cover.garage
+```
+
+No:
+
+```text
+GPIO23
+CAN_ID=0x125
+MODBUS_REGISTER=40001
+```
+
+---
+
+## 4.3 Local-first
+
+Una comunicación local no debe depender de Internet.
+
+```text
+Internet
+   ↓
+Cloud
+   ↓
+Central
+   ↓
+Zone
+   ↓
+Node
+   ↓
+Device
+```
+
+Las funciones críticas deberán ejecutarse en el nivel más bajo posible.
+
+---
+
+## 4.4 Autonomía distribuida
+
+Se mantiene la jerarquía:
+
+```text
+DEVICE AUTONOMY
+       >
+ZONE AUTONOMY
+       >
+CENTRAL
+       >
+INTERNET
+       >
+CLOUD
+```
+
+El System Bus debe permitir que un nodo continúe funcionando aunque:
+
+* Central esté apagada;
+* Internet no exista;
+* otro nodo no responda;
+* una integración externa esté desconectada.
+
+---
+
+## 4.5 Mensajes explícitos
+
+Toda comunicación deberá tener una semántica definida.
+
+Tipos principales:
+
+```text
+COMMAND
+EVENT
+STATE
+TELEMETRY
+DISCOVERY
+RESPONSE
+ACK
+ERROR
+```
+
+---
+
+## 4.6 Idempotencia
+
+Los comandos que puedan repetirse deberán diseñarse para evitar efectos duplicados.
 
 Ejemplo:
 
 ```text
-Automation
-    ↓
-Command
-    ↓
-System Bus
-    ↓
-Transport Adapter
-    ↓
-Ethernet
-    ↓
-Node
+command_id = 01J...
+idempotency_key = abc123
 ```
 
-La automatización nunca debería hacer:
+Si el mismo comando llega dos veces debido a un retry, el dispositivo deberá poder determinar que se trata de la misma operación.
+
+---
+
+# 5. Arquitectura del System Bus
+
+La implementación recomendada es:
 
 ```text
-sendMQTT(...)
-```
-
-ni:
-
-```text
-sendCAN(...)
-```
-
-ni:
-
-```text
-writeModbusRegister(...)
-```
-
-directamente.
-
-Debe hacer:
-
-```text
-bus.publish(command)
+┌───────────────────────────────┐
+│          Application          │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│       System Bus API          │
+│                               │
+│ publish()                     │
+│ subscribe()                  │
+│ request()                     │
+│ sendCommand()                 │
+│ emitEvent()                   │
+│ publishState()                │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│        System Bus Core        │
+│                               │
+│ Routing                       │
+│ Filtering                     │
+│ QoS                           │
+│ Retry                         │
+│ Timeout                       │
+│ Deduplication                 │
+│ Correlation                   │
+│ Security                      │
+└───────────────┬───────────────┘
+                │
+                ▼
+┌───────────────────────────────┐
+│      Transport Manager        │
+└───────────────┬───────────────┘
+                │
+       ┌────────┼────────┐
+       ▼        ▼        ▼
+     Local    Network   Field
+              Bus       Bus
 ```
 
 ---
 
-# 3. Arquitectura por capas
+# 6. Capas
 
-```text
-┌──────────────────────────────────────────────┐
-│              APPLICATION LAYER              │
-│                                              │
-│ Automations / Scenes / Functions / UI / API │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                 DATA MODEL                   │
-│                                              │
-│ Entity / State / Command / Event             │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│                 SYSTEM BUS                   │
-│                                              │
-│ Routing / Priority / ACK / Retry / QoS       │
-│ Discovery / Synchronization / Correlation    │
-└──────────────────────┬───────────────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────────────┐
-│              TRANSPORT LAYER                 │
-│                                              │
-│ Ethernet / Wi-Fi / CAN / RS485 / MQTT       │
-│ WebSocket / Thread / Matter / etc.          │
-└──────────────────────────────────────────────┘
+## 6.1 System Bus API
+
+Es la interfaz utilizada por módulos y servicios.
+
+Ejemplo conceptual:
+
+```cpp
+bus.publish(event);
+bus.send(command);
+bus.subscribe(filter, callback);
+bus.request(request);
 ```
+
+El módulo no debe conocer el transporte.
 
 ---
 
-# 4. System Bus vs Transport
+## 6.2 System Bus Core
 
-Esta separación es obligatoria.
+Gestiona:
 
-## System Bus
-
-Se ocupa de:
-
-* mensajes;
-* direccionamiento lógico;
+* routing;
 * prioridades;
-* correlación;
+* colas;
+* timeout;
+* retry;
 * ACK;
-* reintentos;
+* correlación;
 * deduplicación;
-* expiración;
-* sincronización;
-* discovery;
-* seguridad lógica;
-* routing.
-
-## Transport
-
-Se ocupa de:
-
-* transmitir bytes;
-* conexión física;
-* framing;
-* paquetes;
-* checksum;
-* enlace;
-* reconexión;
-* MTU;
-* velocidad;
-* características específicas del medio.
+* suscripciones;
+* filtrado;
+* seguridad;
+* versionado;
+* métricas.
 
 ---
 
-# 5. Transport Adapters
+## 6.3 Transport Manager
+
+Selecciona el transporte apropiado.
+
+Ejemplo:
+
+```text
+Destination
+     ↓
+Transport Resolver
+     ↓
+┌───────────────┐
+│ Ethernet      │
+│ Wi-Fi         │
+│ CAN           │
+│ RS485         │
+│ Thread        │
+│ Matter        │
+│ Local         │
+└───────────────┘
+```
+
+---
+
+# 7. Transport Adapters
 
 Cada transporte se implementará mediante un adaptador.
 
+Ejemplo:
+
 ```text
-System Bus
-    │
-    ├── EthernetAdapter
-    ├── WiFiAdapter
-    ├── CANAdapter
-    ├── RS485Adapter
-    ├── MQTTAdapter
-    ├── WebSocketAdapter
-    ├── MatterAdapter
-    └── FutureAdapter
+TransportAdapter
+│
+├── LocalTransport
+├── WifiTransport
+├── EthernetTransport
+├── CanTransport
+├── Rs485Transport
+├── ThreadTransport
+├── MatterTransport
+└── CustomTransport
 ```
 
-Cada adaptador debe implementar una interfaz común.
-
-Conceptualmente:
+La interfaz conceptual puede ser:
 
 ```cpp
 class TransportAdapter {
 public:
-    virtual bool send(const BusMessage& message);
-    virtual bool receive(BusMessage& message);
-    virtual bool isAvailable();
-    virtual void process();
+    virtual bool begin() = 0;
+
+    virtual bool send(
+        const BusMessage& message
+    ) = 0;
+
+    virtual bool receive(
+        BusMessage& message
+    ) = 0;
+
+    virtual bool available() = 0;
+
+    virtual bool connected() = 0;
+
+    virtual void update() = 0;
 };
 ```
 
-La implementación real podrá variar según firmware.
+La implementación real podrá adaptarse al modelo FreeRTOS utilizado.
 
 ---
 
-# 6. Bus Message
+# 8. Transporte local
 
-Todos los mensajes utilizarán un envelope común.
+Dentro de un mismo ESP32 no es necesario utilizar una red.
 
-Ejemplo:
-
-```json
-{
-  "message_id": "msg_01JXYZ",
-  "message_type": "command",
-  "schema_version": "1.0.0",
-
-  "timestamp": "2026-10-05T15:30:00Z",
-
-  "source": {
-    "node_id": "node.living"
-  },
-
-  "destination": {
-    "type": "entity",
-    "id": "light.living.main"
-  },
-
-  "priority": "normal",
-
-  "request_id": "req_01JXYZ",
-  "correlation_id": "corr_01JXYZ",
-
-  "payload": {}
-}
-```
-
----
-
-# 7. Message ID
-
-Cada mensaje debe tener:
+Los módulos pueden comunicarse mediante:
 
 ```text
-message_id
+FreeRTOS Queue
+Event Group
+Task Notification
+Ring Buffer
+Shared State
 ```
 
-Debe ser globalmente único dentro del ámbito de la plataforma.
-
-Ejemplo:
+Por ejemplo:
 
 ```text
-msg_01JXYZ...
+SensorTask
+    ↓
+System Bus
+    ↓
+AutomationTask
 ```
 
-El `message_id` permite:
-
-* deduplicación;
-* trazabilidad;
-* debugging;
-* auditoría;
-* reintentos.
+Esto permite utilizar exactamente la misma arquitectura lógica para comunicación interna y externa.
 
 ---
 
-# 8. Message Types
+# 9. Comunicación entre dispositivos
 
-Tipos iniciales:
+Cuando el destino está en otro dispositivo:
 
 ```text
-command
-command_result
-event
-state
-state_snapshot
-discovery
-discovery_response
-configuration
-configuration_result
-health
-diagnostic
-ack
-nack
-sync
-sync_response
-heartbeat
-presence
+Node A
+  │
+  ▼
+System Bus
+  │
+  ▼
+Transport Adapter
+  │
+  ▼
+Ethernet / Wi-Fi / CAN / RS485
+  │
+  ▼
+Transport Adapter
+  │
+  ▼
+System Bus
+  │
+  ▼
+Node B
 ```
+
+El mensaje mantiene su identidad lógica.
 
 ---
 
-# 9. Command Message
+# 10. Tipos de mensajes
+
+## 10.1 COMMAND
+
+Representa una intención de modificar algo.
 
 Ejemplo:
 
 ```json
 {
   "message_type": "command",
-
-  "destination": {
-    "type": "entity",
-    "id": "light.living.main"
-  },
-
-  "payload": {
-    "action": "turn_on",
-    "parameters": {
-      "brightness": 80
-    }
-  }
+  "entity_id": "light.living_room",
+  "command": "turn_on"
 }
 ```
 
-El comando se ejecuta en el destino correspondiente.
+Otros ejemplos:
+
+```text
+set_brightness
+set_temperature
+set_position
+open
+close
+lock
+unlock
+start
+stop
+set_speed
+set_mode
+```
 
 ---
 
-# 10. Event Message
+# 11. EVENT
+
+Representa algo que ocurrió.
 
 Ejemplo:
 
 ```json
 {
   "message_type": "event",
-
-  "destination": {
-    "type": "broadcast"
-  },
-
-  "payload": {
-    "event_id": "evt_01JXYZ",
-    "type": "motion.detected",
-    "entity_id": "binary_sensor.hall.motion"
-  }
+  "event_type": "motion_detected",
+  "entity_id": "binary_sensor.hall_motion"
 }
 ```
 
-Los eventos normalmente no requieren una respuesta.
+Los eventos no representan necesariamente el estado actual.
+
+Por ejemplo:
+
+```text
+EVENT:
+motion_detected
+```
+
+no significa:
+
+```text
+motion = true
+```
+
+La diferencia debe mantenerse.
 
 ---
 
-# 11. State Message
+# 12. STATE
 
-Un State Message informa de un estado actual.
+Representa el estado conocido de una entidad.
 
 Ejemplo:
 
 ```json
 {
   "message_type": "state",
-
-  "destination": {
-    "type": "broadcast"
-  },
-
-  "payload": {
-    "entity_id": "sensor.living.temperature",
-    "value": 23.4,
-    "unit": "°C",
-    "quality": "good"
+  "entity_id": "light.living_room",
+  "state": {
+    "power": true,
+    "brightness": 80
   }
 }
 ```
 
----
-
-# 12. State Snapshot
-
-Un `state_snapshot` contiene múltiples estados.
-
-Se utiliza principalmente para:
-
-* sincronización;
-* recuperación;
-* reconexión;
-* Central;
-* Zone Controller.
-
-Ejemplo:
-
-```json
-{
-  "message_type": "state_snapshot",
-
-  "payload": {
-    "entities": [
-      {
-        "entity_id": "light.living.main",
-        "state": {
-          "on": true
-        }
-      },
-      {
-        "entity_id": "sensor.living.temperature",
-        "state": {
-          "value": 23.4,
-          "unit": "°C"
-        }
-      }
-    ]
-  }
-}
-```
-
----
-
-# 13. ACK
-
-Un ACK confirma recepción o aceptación de un mensaje.
-
-Importante:
-
-> ACK no significa necesariamente que la operación haya terminado.
-
-Ejemplo:
-
-```json
-{
-  "message_type": "ack",
-  "payload": {
-    "message_id": "msg_01JXYZ",
-    "status": "accepted"
-  }
-}
-```
-
----
-
-# 14. NACK
-
-Un NACK indica rechazo.
-
-Ejemplo:
-
-```json
-{
-  "message_type": "nack",
-  "payload": {
-    "message_id": "msg_01JXYZ",
-    "error": {
-      "code": "INVALID_COMMAND",
-      "message": "Unsupported action"
-    }
-  }
-}
-```
-
----
-
-# 15. ACK vs Command Result
-
-Debe distinguirse:
+El estado debe incluir, cuando corresponda:
 
 ```text
-ACK
-    =
-"Recibí / acepté el mensaje"
-
-Command Result
-    =
-"El comando terminó"
+timestamp
+source
+quality
+confidence
+version
 ```
 
+---
+
+# 13. TELEMETRY
+
+La telemetría transporta mediciones periódicas.
+
 Ejemplo:
+
+```json
+{
+  "message_type": "telemetry",
+  "entity_id": "sensor.greenhouse.temperature",
+  "value": 24.7,
+  "unit": "°C"
+}
+```
+
+Puede utilizarse para:
+
+* temperatura;
+* humedad;
+* presión;
+* corriente;
+* tensión;
+* potencia;
+* energía;
+* flujo;
+* velocidad;
+* posición;
+* calidad del aire;
+* etc.
+
+---
+
+# 14. DISCOVERY
+
+Se utiliza para descubrir dispositivos, recursos, capacidades y entidades.
+
+Ejemplo:
+
+```text
+Central
+   ↓
+DISCOVERY_REQUEST
+   ↓
+Node
+   ↓
+DISCOVERY_RESPONSE
+```
+
+La respuesta puede informar:
+
+```text
+device_id
+hardware_profile
+firmware_version
+resources
+capabilities
+entities
+supported_transports
+```
+
+---
+
+# 15. ACK / RESPONSE
+
+Los mensajes que requieren confirmación pueden utilizar:
+
+```text
+REQUEST
+   ↓
+ACK
+   ↓
+RESPONSE
+```
+
+Por ejemplo:
 
 ```text
 Central
@@ -486,4106 +653,3410 @@ Node
    ▼
 Central
    │
-   │
-   │ ... ejecución ...
-   │
-   │ COMMAND_RESULT
+   │ RESPONSE
    ▼
 Central
 ```
 
----
+El ACK confirma recepción.
 
-# 16. Correlation
+El RESPONSE confirma el resultado de la operación.
 
-Los mensajes relacionados deben utilizar:
-
-```text
-request_id
-correlation_id
-```
-
-Ejemplo:
-
-```text
-User request
-     │
-     └── request_id
-           │
-           ├── command
-           ├── ack
-           ├── command_result
-           └── events
-```
-
-Esto permite reconstruir una operación completa.
+No deben confundirse.
 
 ---
 
-# 17. Request ID
+# 16. Envelope del mensaje
 
-`request_id` identifica la solicitud original.
+Todos los mensajes deberán utilizar una envoltura común.
 
-Ejemplo:
-
-```text
-req_01JXYZ
-```
-
-Puede atravesar múltiples capas.
-
----
-
-# 18. Correlation ID
-
-`correlation_id` agrupa una secuencia relacionada.
-
-Ejemplo:
-
-```text
-corr.living.motion.123
-```
-
-Puede representar:
-
-```text
-Motion
- ↓
-Automation
- ↓
-Light command
- ↓
-Notification
-```
-
----
-
-# 19. Addressing
-
-El direccionamiento debe ser lógico.
-
-Tipos de destino:
-
-```text
-node
-device
-entity
-zone
-group
-function
-central
-broadcast
-multicast
-```
-
-Ejemplo:
+Modelo conceptual:
 
 ```json
 {
+  "message_id": "01J...",
+  "message_type": "command",
+  "schema_version": "1.0",
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "source": {
+    "site_id": "site-001",
+    "zone_id": "zone-living",
+    "device_id": "node-001"
+  },
+
   "destination": {
-    "type": "zone",
-    "id": "zone.living"
-  }
+    "device_id": "node-005",
+    "entity_id": "light.living_room"
+  },
+
+  "request_id": "01J...",
+  "correlation_id": "01J...",
+
+  "priority": "normal",
+  "qos": "reliable",
+  "ttl": 10,
+
+  "payload": {}
 }
 ```
 
 ---
 
-# 20. Addressing Examples
+# 17. Campos principales
 
-### Node
+## `message_id`
+
+Identificador único del mensaje.
+
+Debe permitir:
+
+* deduplicación;
+* trazabilidad;
+* diagnóstico;
+* correlación.
+
+---
+
+## `message_type`
+
+Ejemplos:
 
 ```text
-node.kitchen.controller
+command
+event
+state
+telemetry
+discovery
+response
+ack
+error
 ```
 
-### Device
+---
+
+## `schema_version`
+
+Versión del formato del mensaje.
+
+Ejemplo:
 
 ```text
-device.kitchen.relay01
+1.0
+1.1
+2.0
 ```
 
-### Entity
+---
+
+## `timestamp`
+
+Marca temporal de creación del mensaje.
+
+Cuando el dispositivo no tenga hora válida deberá poder utilizar:
 
 ```text
-light.kitchen.main
+monotonic timestamp
+sequence number
+boot_id
 ```
 
-### Zone
+hasta que NTP o una fuente de tiempo válida esté disponible.
+
+---
+
+## `source`
+
+Identifica el origen lógico.
+
+---
+
+## `destination`
+
+Identifica el destino.
+
+Puede apuntar a:
 
 ```text
-zone.kitchen
-```
-
-### Group
-
-```text
-group.downstairs_lights
-```
-
-### Broadcast
-
-```text
+device
+zone
+group
+entity
+function
+central
 broadcast
 ```
+
+---
+
+## `request_id`
+
+Identifica una solicitud lógica.
+
+---
+
+## `correlation_id`
+
+Permite asociar múltiples mensajes con una misma operación.
+
+Ejemplo:
+
+```text
+COMMAND
+   ↓
+ACK
+   ↓
+STATE
+   ↓
+EVENT
+```
+
+Todos pueden compartir:
+
+```text
+correlation_id
+```
+
+---
+
+# 18. TTL
+
+Los mensajes distribuidos deberán poder incluir:
+
+```text
+ttl
+```
+
+para evitar propagación infinita.
+
+Ejemplo:
+
+```text
+TTL = 8
+```
+
+Cada salto puede reducirlo:
+
+```text
+8 → 7 → 6 → 5 ...
+```
+
+Cuando llegue a:
+
+```text
+0
+```
+
+el mensaje deberá descartarse.
+
+---
+
+# 19. Prioridades
+
+Se recomienda utilizar prioridades lógicas.
+
+```text
+CRITICAL
+HIGH
+NORMAL
+LOW
+BACKGROUND
+```
+
+Ejemplo:
+
+| Prioridad  | Ejemplo        |
+| ---------- | -------------- |
+| CRITICAL   | emergencia     |
+| HIGH       | seguridad      |
+| NORMAL     | automatización |
+| LOW        | telemetría     |
+| BACKGROUND | diagnóstico    |
+
+Las prioridades deben influir en las colas y planificación, no necesariamente en el protocolo físico.
+
+---
+
+# 20. QoS
+
+El System Bus deberá soportar diferentes niveles de confiabilidad.
+
+Propuesta:
+
+```text
+BEST_EFFORT
+AT_LEAST_ONCE
+RELIABLE
+```
+
+## BEST_EFFORT
+
+Adecuado para:
+
+* telemetría;
+* valores periódicos;
+* información no crítica.
+
+## AT_LEAST_ONCE
+
+Adecuado para:
+
+* eventos;
+* comandos donde exista idempotencia.
+
+## RELIABLE
+
+Adecuado para:
+
+* configuración;
+* provisioning;
+* operaciones críticas.
+
+La disponibilidad real dependerá del transporte.
 
 ---
 
 # 21. Routing
 
-El System Bus debe poder determinar la ruta adecuada.
+El System Bus deberá soportar diferentes destinos.
+
+## Unicast
+
+```text
+Node A → Node B
+```
+
+## Multicast
+
+```text
+Node A → Grupo
+```
+
+## Broadcast
+
+```text
+Node A → Todos
+```
+
+## Zonecast
+
+```text
+Central → Zone 1
+```
+
+## Entity routing
+
+```text
+light.living_room
+```
+
+El router resolverá qué dispositivo contiene dicha entidad.
+
+---
+
+# 22. Direccionamiento lógico
+
+La aplicación puede trabajar con:
+
+```text
+site_id
+zone_id
+device_id
+group_id
+entity_id
+```
 
 Ejemplo:
 
 ```text
-Central
-   ↓
-Zone: Ground Floor
-   ↓
-Node: Living Controller
-   ↓
-Entity: light.living.main
+site: home-001
+zone: living-room
+device: node-024
+entity: light.living_room
 ```
 
-El origen no necesita conocer necesariamente:
+La resolución hacia:
 
 ```text
 IP
 MAC
+CAN ID
+RS485 address
+Modbus address
+Thread address
+Matter node
+```
+
+queda a cargo de las capas inferiores.
+
+---
+
+# 23. Separación entre dirección lógica y física
+
+Esta separación es fundamental.
+
+```text
+ENTITY
+   ↓
+DEVICE
+   ↓
+ROUTING
+   ↓
+TRANSPORT
+   ↓
+PHYSICAL ADDRESS
+```
+
+Nunca:
+
+```text
+ENTITY
+   ↓
 GPIO
-MQTT topic
+```
+
+directamente.
+
+---
+
+# 24. Command Lifecycle
+
+Todo comando distribuido deberá poder seguir un ciclo de vida.
+
+```text
+REQUESTED
+    ↓
+AUTHORIZED
+    ↓
+ACCEPTED
+    ↓
+QUEUED
+    ↓
+EXECUTING
+    ↓
+EXECUTED
+```
+
+También puede finalizar como:
+
+```text
+REJECTED
+FAILED
+TIMEOUT
+CANCELLED
+```
+
+Ejemplo:
+
+```text
+POST command
+      ↓
+command_id
+      ↓
+ACCEPTED
+      ↓
+Node receives
+      ↓
+EXECUTING
+      ↓
+ACTUAL STATE
+      ↓
+EXECUTED
+```
+
+---
+
+# 25. Command vs State
+
+Un comando expresa:
+
+> “Haz esto.”
+
+El estado expresa:
+
+> “Esto es lo que está ocurriendo.”
+
+Ejemplo:
+
+```text
+COMMAND
+light.living_room → turn_on
+```
+
+No implica necesariamente:
+
+```text
+STATE
+power = true
+```
+
+hasta que el dispositivo confirme el resultado.
+
+Esto permite distinguir:
+
+```text
+desired state
+actual state
+```
+
+---
+
+# 26. Desired State
+
+Los actuadores podrán utilizar:
+
+```json
+{
+  "desired": {
+    "power": true,
+    "brightness": 75
+  },
+  "actual": {
+    "power": false,
+    "brightness": 0
+  }
+}
+```
+
+Esto permite detectar:
+
+```text
+desired != actual
+```
+
+y determinar que existe una condición pendiente o un fallo.
+
+---
+
+# 27. Events
+
+Los eventos representan cambios o hechos.
+
+Ejemplos:
+
+```text
+motion_detected
+door_opened
+button_pressed
+device_connected
+device_disconnected
+alarm_triggered
+temperature_threshold_exceeded
+configuration_changed
+```
+
+Un evento puede disparar:
+
+```text
+automation
+scene
+notification
+logging
+integration
+```
+
+---
+
+# 28. Event-driven architecture
+
+El sistema debe favorecer comunicación orientada a eventos.
+
+Ejemplo:
+
+```text
+PIR
+ ↓
+motion_detected
+ ↓
+System Bus
+ ↓
+Automation
+ ↓
+COMMAND
+ ↓
+Light
+```
+
+En lugar de:
+
+```text
+PIR → llamar directamente a Light
+```
+
+Esto reduce el acoplamiento.
+
+---
+
+# 29. Suscripciones
+
+Los módulos pueden suscribirse a:
+
+```text
+message_type
+entity_id
+event_type
+zone_id
+group_id
+capability
+priority
+```
+
+Ejemplo:
+
+```text
+subscribe(
+    event_type = "motion_detected",
+    zone = "hall"
+)
+```
+
+---
+
+# 30. Filtros
+
+Los filtros permiten reducir tráfico.
+
+Ejemplo:
+
+```text
+zone = living
+message_type = event
+event_type = motion_detected
+```
+
+También:
+
+```text
+entity = sensor.temperature
+```
+
+---
+
+# 31. Store-and-forward
+
+Los nodos podrán almacenar temporalmente mensajes cuando el transporte esté desconectado.
+
+Ejemplo:
+
+```text
+Node
+ ↓
+No connection
+ ↓
+Local queue
+ ↓
+Connection restored
+ ↓
+Transmit pending messages
+```
+
+No todos los mensajes deben almacenarse.
+
+Debe definirse por:
+
+```text
+QoS
+priority
+message_type
+TTL
+```
+
+---
+
+# 32. Offline behavior
+
+Si Central está desconectada:
+
+```text
+Node
+ ↓
+Local System Bus
+ ↓
+Local automation
+ ↓
+Actuator
+```
+
+debe continuar funcionando.
+
+La pérdida de Central no debe bloquear:
+
+* iluminación local;
+* climatización crítica;
+* seguridad;
+* sensores;
+* actuadores;
+* automatizaciones locales.
+
+---
+
+# 33. Central como coordinador
+
+Central puede recibir:
+
+```text
+state
+event
+telemetry
+diagnostics
+```
+
+y enviar:
+
+```text
+commands
+configuration
+scene activation
+automation configuration
+```
+
+Pero no debe ser una dependencia obligatoria para cada operación local.
+
+---
+
+# 34. Comunicación entre Zone Controllers
+
+Ejemplo:
+
+```text
+Zone A
+   │
+   │
+   ▼
+Central
+   │
+   ▼
+Zone B
+```
+
+También deberá ser posible, cuando la arquitectura lo permita:
+
+```text
+Zone A
+   │
+   └──────► Zone B
+```
+
+sin depender obligatoriamente de Central.
+
+Esto permite implementar automatizaciones distribuidas.
+
+---
+
+# 35. Transportes soportados
+
+El diseño debe contemplar:
+
+| Transporte | Uso                      |
+| ---------- | ------------------------ |
+| Local      | comunicación interna     |
+| Wi-Fi      | nodos inalámbricos       |
+| Ethernet   | backbone                 |
+| CAN        | automatización robusta   |
+| RS485      | campo/industrial         |
+| Modbus RTU | dispositivos compatibles |
+| Thread     | dispositivos IoT         |
+| Matter     | interoperabilidad        |
+| Futuro     | nuevos transportes       |
+
+---
+
+# 36. Ethernet
+
+Ethernet puede utilizar:
+
+```text
+ESP32 + LAN8720A/IP101
+```
+
+o:
+
+```text
+ESP32-S3 + W5500
+```
+
+La aplicación deberá ver ambos simplemente como:
+
+```text
+EthernetTransport
+```
+
+No debe existir lógica de negocio diferente por el PHY/controlador Ethernet.
+
+---
+
+# 37. Wi-Fi
+
+Wi-Fi se utilizará principalmente para:
+
+* nodos inalámbricos;
+* configuración;
+* API;
+* WebSocket;
+* comunicación distribuida;
+* integración.
+
+El System Bus no debe asumir que Wi-Fi siempre está disponible.
+
+---
+
+# 38. CAN
+
+CAN puede utilizarse para:
+
+* automatización distribuida;
+* industria ligera;
+* vehículos;
+* aplicaciones marinas;
+* largas distancias dentro de una instalación;
+* comunicación robusta entre controladores.
+
+El System Bus deberá abstraer el CAN ID.
+
+Ejemplo:
+
+```text
+Entity
+   ↓
+System Bus
+   ↓
+CAN Transport
+   ↓
 CAN ID
 ```
 
 ---
 
-# 22. Local Routing
+# 39. RS485
 
-Un Node puede resolver localmente un comando.
+RS485 es una capa física.
+
+El protocolo superior puede ser:
+
+```text
+Modbus RTU
+```
+
+u otro protocolo.
+
+Por lo tanto:
+
+```text
+RS485 != Modbus
+```
+
+El System Bus deberá mantener esta separación.
 
 Ejemplo:
 
 ```text
-Automation
-    ↓
 System Bus
     ↓
-Local Entity
-```
-
-No debe enviarse innecesariamente al Central.
-
----
-
-# 23. Zone Routing
-
-Si una entidad pertenece a una zona:
-
-```text
-Zone Controller
-```
-
-puede actuar como router local.
-
-Ejemplo:
-
-```text
-Central
-   ↓
-Zone Controller
-   ├── Node A
-   ├── Node B
-   └── Node C
-```
-
----
-
-# 24. Central Routing
-
-El Central puede actuar como router lógico cuando:
-
-* no existe ruta local;
-* se necesita coordinación global;
-* el destino pertenece a otra zona;
-* una integración externa genera la orden.
-
-Pero:
-
-> El Central no debe ser un requisito para la comunicación local.
-
----
-
-# 25. Broadcast
-
-Broadcast permite enviar información a todos los nodos compatibles.
-
-Ejemplos:
-
-```text
-system announcement
-time synchronization
-emergency
-discovery
-firmware availability
-```
-
-No debe utilizarse indiscriminadamente.
-
----
-
-# 26. Multicast
-
-Multicast permite dirigirse a un conjunto lógico.
-
-Ejemplo:
-
-```text
-group.all_lights
-```
-
-o:
-
-```text
-zone.ground_floor
-```
-
----
-
-# 27. Priority
-
-Los mensajes pueden tener:
-
-```text
-emergency
-critical
-high
-normal
-low
-background
-```
-
-Prioridad:
-
-```text
-EMERGENCY
+RS485 Transport
     ↓
-CRITICAL
+Modbus Adapter
     ↓
-HIGH
+RS485
+```
+
+---
+
+# 40. Thread y Matter
+
+Thread y Matter podrán utilizarse como transportes o integraciones según el contexto.
+
+Debe mantenerse la separación:
+
+```text
+System Bus
     ↓
-NORMAL
+Matter Adapter
     ↓
-LOW
+Matter
+```
+
+La plataforma no debe convertir internamente todas sus entidades en entidades Matter.
+
+Matter es una representación externa/interop.
+
+---
+
+# 41. Integraciones
+
+El System Bus también puede servir como fuente interna para:
+
+```text
+MQTT
+REST API
+WebSocket
+Matter
+Home Assistant
+SmartThings
+Homey
+Apple Home
+Google Home
+Alexa
+```
+
+Arquitectura:
+
+```text
+                 Device Model
+                      │
+                 System Bus
+                      │
+        ┌─────────────┼──────────────┐
+        │             │              │
+       API           MQTT          Matter
+        │             │              │
+     External      External       External
+```
+
+---
+
+# 42. MQTT
+
+MQTT no debe ser el System Bus interno obligatorio.
+
+Puede funcionar como:
+
+```text
+System Bus
     ↓
-BACKGROUND
-```
-
----
-
-# 28. Priority Rules
-
-Un mensaje de prioridad baja nunca debe bloquear indefinidamente uno crítico.
-
-Ejemplo:
-
-```text
-Firmware telemetry
-      ↓
-LOW
-
-Door alarm
-      ↓
-CRITICAL
-```
-
-El sistema debe procesar primero el segundo.
-
----
-
-# 29. Safety Override
-
-Las órdenes relacionadas con seguridad pueden interrumpir otras operaciones.
-
-Ejemplo:
-
-```text
-normal:
-motor = running
-
-emergency:
-motor = stop
-```
-
-La orden de emergencia debe poder superar la cola normal.
-
----
-
-# 30. Message TTL
-
-Los mensajes pueden tener TTL.
-
-Ejemplo:
-
-```json
-{
-  "ttl_ms": 5000
-}
-```
-
-Si el mensaje expira antes de ejecutarse:
-
-```text
-TIMEOUT / EXPIRED
-```
-
-Esto es especialmente importante para:
-
-* movimiento;
-* iluminación temporal;
-* comandos de UI;
-* presencia;
-* acciones dependientes del tiempo.
-
----
-
-# 31. Retry
-
-Los mensajes pueden reintentarse.
-
-Parámetros:
-
-```text
-max_retries
-retry_interval
-backoff
-```
-
-Ejemplo:
-
-```text
-Retry 1 → 100 ms
-Retry 2 → 250 ms
-Retry 3 → 500 ms
-Retry 4 → 1 s
-```
-
-Se recomienda exponential backoff con límites.
-
----
-
-# 32. Retry Policy
-
-No todos los mensajes deben reintentarse.
-
-### Sí
-
-* configuración;
-* comandos idempotentes;
-* sincronización;
-* discovery.
-
-### Condicional
-
-* eventos;
-* estados;
-* notificaciones.
-
-### Generalmente no
-
-* acciones temporales ya expiradas;
-* comandos peligrosos no idempotentes;
-* comandos de emergencia ya ejecutados.
-
----
-
-# 33. Deduplication
-
-Los nodos deben detectar mensajes repetidos mediante:
-
-```text
-message_id
-command_id
-request_id
-```
-
-Ejemplo:
-
-```text
-COMMAND
-message_id = A
-
-retry
-
-COMMAND
-message_id = B
-command_id = C
-```
-
-Si `command_id = C` ya fue ejecutado, el nodo puede devolver el resultado almacenado.
-
----
-
-# 34. Idempotency
-
-Los comandos deben indicar si son idempotentes cuando sea relevante.
-
-Ejemplo:
-
-```text
-turn_on
-```
-
-normalmente puede tratarse como idempotente.
-
-Mientras:
-
-```text
-toggle
-```
-
-no lo es.
-
-Por eso:
-
-```text
-turn_on
-turn_off
-```
-
-son preferibles a:
-
-```text
-toggle
-```
-
-en comunicaciones distribuidas críticas.
-
----
-
-# 35. QoS
-
-El System Bus puede definir niveles conceptuales:
-
-```text
-QoS 0
-Best effort
-
-QoS 1
-At least once
-
-QoS 2
-Exactly once lógico
-```
-
-La implementación exacta dependerá del transporte.
-
-Importante:
-
-> “Exactly once” debe entenderse como semántica lógica, no necesariamente como garantía física del transporte.
-
----
-
-# 36. Reliability Classes
-
-Además de QoS, se pueden definir clases:
-
-```text
-best_effort
-reliable
-critical
-```
-
-Ejemplo:
-
-```text
-temperature telemetry
-→ best_effort
-
-configuration
-→ reliable
-
-emergency stop
-→ critical
-```
-
----
-
-# 37. Message Persistence
-
-No todos los mensajes deben persistirse.
-
-### Persistentes
-
-* configuración;
-* comandos críticos pendientes;
-* eventos importantes;
-* estado deseado.
-
-### No persistentes
-
-* telemetry de alta frecuencia;
-* heartbeats;
-* estados redundantes;
-* métricas temporales.
-
----
-
-# 38. Offline Queue
-
-Los nodos pueden mantener una cola local.
-
-Ejemplo:
-
-```text
-Central offline
-       ↓
-Node continues
-       ↓
-Local automation
-       ↓
-Events queued
-       ↓
-Central returns
-       ↓
-Synchronization
-```
-
-La cola debe tener:
-
-```text
-maximum size
-priority
-expiration
-persistence policy
-```
-
----
-
-# 39. Queue Overflow
-
-Si la cola se llena:
-
-```text
-critical
-    >
-high
-    >
-normal
-    >
-low
-    >
-background
-```
-
-Los mensajes de menor prioridad pueden descartarse primero.
-
-Nunca se deben descartar silenciosamente mensajes críticos.
-
----
-
-# 40. Heartbeat
-
-Los nodos pueden enviar:
-
-```text
-heartbeat
-```
-
-Ejemplo:
-
-```json
-{
-  "message_type": "heartbeat",
-  "source": {
-    "node_id": "node.living"
-  },
-  "payload": {
-    "uptime": 123456,
-    "load": 31,
-    "free_heap": 182000
-  }
-}
-```
-
----
-
-# 41. Presence
-
-El heartbeat no necesariamente representa disponibilidad funcional.
-
-Por eso puede existir:
-
-```text
-presence
-```
-
-Estados:
-
-```text
-online
-offline
-degraded
-maintenance
-unknown
-```
-
----
-
-# 42. Health
-
-Health proporciona información más detallada.
-
-Ejemplo:
-
-```json
-{
-  "message_type": "health",
-  "payload": {
-    "status": "degraded",
-    "cpu": 80,
-    "memory": 92,
-    "network": "good",
-    "storage": "warning"
-  }
-}
-```
-
----
-
-# 43. Discovery
-
-Discovery permite que un nodo anuncie sus capacidades.
-
-Flujo:
-
-```text
-Node boot
-   ↓
-Identity
-   ↓
-Discovery
-   ↓
-Capabilities
-   ↓
-Resources
-   ↓
-Entities
-   ↓
-Ready
-```
-
----
-
-# 44. Discovery Request
-
-Ejemplo:
-
-```json
-{
-  "message_type": "discovery",
-  "payload": {
-    "action": "request"
-  }
-}
-```
-
----
-
-# 45. Discovery Response
-
-Ejemplo:
-
-```json
-{
-  "message_type": "discovery_response",
-  "payload": {
-    "device_id": "device.node01",
-    "firmware": {
-      "name": "AutomationNode",
-      "version": "1.2.0"
-    },
-    "resources": [],
-    "entities": []
-  }
-}
-```
-
----
-
-# 46. Discovery Rules
-
-Discovery debe ser:
-
-* seguro;
-* autenticado cuando corresponda;
-* repetible;
-* idempotente;
-* compatible con nodos offline;
-* independiente del transporte.
-
-Un nodo no debe depender del Central para conocer sus propias funciones.
-
----
-
-# 47. Provisioning
-
-Discovery no significa necesariamente autorización.
-
-```text
-Discovery
+MQTT Adapter
     ↓
-Unknown Device
-    ↓
-Authentication
-    ↓
-Authorization
-    ↓
-Provisioning
-    ↓
-Operational
+MQTT Broker
 ```
 
-Esto evita que cualquier dispositivo pueda incorporarse automáticamente a una instalación protegida.
+Esto permite utilizar MQTT para integraciones externas sin acoplar toda la arquitectura a él.
 
 ---
 
-# 48. Synchronization
+# 43. Seguridad
 
-La sincronización tiene varias dimensiones:
+Los mensajes distribuidos deberán poder autenticarse.
 
-```text
-Configuration
-State
-Events
-Time
-Capabilities
-Firmware
-Permissions
-```
-
-Cada una debe poder sincronizarse independientemente.
-
----
-
-# 49. Configuration Synchronization
-
-Ejemplo:
+Dependiendo del transporte se podrá utilizar:
 
 ```text
-Central config version = 20
-Node config version    = 18
+TLS
+DTLS
+CAN authentication
+application-level authentication
+Matter security
+device certificates
+keys
+tokens
 ```
 
-El Node informa:
-
-```text
-CONFIGURATION_OUTDATED
-```
-
-El Central puede enviar la versión 20.
-
----
-
-# 50. Configuration Reconciliation
-
-El objetivo no es simplemente enviar configuración.
-
-Debe existir:
-
-```text
-Desired configuration
-        ↓
-Applied configuration
-        ↓
-Verification
-        ↓
-Reconciliation
-```
-
-Si la aplicación falla:
-
-```text
-desired ≠ applied
-```
-
-el sistema debe conservar esa información.
-
----
-
-# 51. State Synchronization
-
-Cuando un nodo reconecta:
-
-```text
-Node
- ↓
-Current state
- ↓
-Central compares
- ↓
-Differences
- ↓
-Reconciliation
-```
-
-El estado físico real tiene prioridad sobre una suposición obsoleta.
-
----
-
-# 52. Event Synchronization
-
-Los eventos pueden sincronizarse mediante:
-
-```text
-event_id
-timestamp
-sequence
-```
-
-El nodo puede indicar:
-
-```text
-last_event_id
-```
-
-o:
-
-```text
-last_sequence
-```
-
-El Central puede solicitar:
-
-```text
-events since sequence 1024
-```
-
----
-
-# 53. Sequence Numbers
-
-Los nodos pueden utilizar:
-
-```text
-sequence_number
-```
-
-por stream.
-
-Ejemplo:
-
-```text
-1001
-1002
-1003
-1004
-```
-
-Si Central recibe:
-
-```text
-1001
-1002
-1004
-```
-
-detecta:
-
-```text
-missing = 1003
-```
-
----
-
-# 54. Time Synchronization
-
-El sistema debe soportar:
-
-```text
-NTP
-```
-
-y sincronización interna.
-
-Jerarquía recomendada:
-
-```text
-Internet NTP
-      ↓
-Central
-      ↓
-Zone Controller
-      ↓
-Nodes
-```
-
-Pero un nodo debe poder operar con su propio reloj si pierde conexión.
-
----
-
-# 55. Monotonic Time
-
-Para:
-
-* timeout;
-* retry;
-* TTL;
-* scheduling interno;
-
-se debe utilizar preferentemente un reloj monotónico.
-
-No depender exclusivamente de:
-
-```text
-wall clock
-```
-
-porque puede cambiar después de una sincronización NTP.
-
----
-
-# 56. Security
-
-El System Bus debe contemplar:
+La seguridad deberá dividirse en:
 
 ```text
 Authentication
 Authorization
 Integrity
 Confidentiality
-Replay protection
-Message freshness
+Replay Protection
 ```
 
 ---
 
-# 57. Device Authentication
+# 44. Autorización
 
-Cada dispositivo debe poseer una identidad.
-
-Ejemplo conceptual:
-
-```text
-device_id
-+
-credential
-+
-certificate/key
-```
-
-Nunca se debe autenticar únicamente por:
-
-```text
-MAC address
-IP
-hostname
-```
-
----
-
-# 58. Message Integrity
-
-Los mensajes críticos deben poder verificar integridad.
-
-Opciones:
-
-```text
-TLS
-DTLS
-MAC
-digital signature
-transport-level security
-```
-
-La implementación dependerá del transporte.
-
----
-
-# 59. Encryption
-
-El bus no debe asumir que todos los transportes son seguros.
-
-Ejemplos:
-
-```text
-Ethernet
-→ TLS cuando corresponda
-
-Wi-Fi
-→ TLS / secure transport
-
-MQTT
-→ MQTT over TLS
-
-RS485
-→ cifrado/autenticación a nivel superior si es necesario
-
-CAN
-→ seguridad de aplicación cuando corresponda
-```
-
----
-
-# 60. Replay Protection
-
-Los mensajes críticos deben protegerse contra repetición.
-
-Se pueden utilizar:
-
-```text
-timestamp
-nonce
-sequence
-message_id
-expiration
-```
-
-Ejemplo:
-
-```text
-command
-+
-nonce
-+
-timestamp
-+
-signature
-```
-
----
-
-# 61. Permissions
-
-El System Bus debe respetar las políticas de autorización.
+No todos los nodos podrán ejecutar todos los comandos.
 
 Ejemplo:
 
 ```text
 User
  ↓
-Permission
+Central
  ↓
-Command
+Authorization
  ↓
 System Bus
  ↓
-Target
-```
-
-Un nodo no debe ejecutar automáticamente cualquier comando recibido por el bus.
-
----
-
-# 62. Local Authority
-
-Un Node puede rechazar un comando del Central si:
-
-* viola una condición de seguridad;
-* está fuera de rango;
-* el dispositivo está en mantenimiento;
-* el comando requiere permisos superiores;
-* el comando está expirado;
-* la automatización local tiene prioridad.
-
----
-
-# 63. Local-First Principle
-
-Regla fundamental:
-
-> **La pérdida del Central no debe detener las funciones locales críticas.**
-
-Ejemplo:
-
-```text
-Central OFFLINE
-
-Security Node
-    ↓
-continues detecting doors
-
-Lighting Node
-    ↓
-continues local automations
-
-Climate Node
-    ↓
-continues climate control
-```
-
----
-
-# 64. Autonomy Hierarchy
-
-La arquitectura utiliza:
-
-```text
-DEVICE AUTONOMY
-      >
-ZONE AUTONOMY
-      >
-CENTRAL
-      >
-INTERNET
-      >
-CLOUD
-```
-
-La capa superior coordina, pero no debe quitar capacidad esencial a las capas inferiores.
-
----
-
-# 65. Central Failure
-
-Si Central falla:
-
-```text
-Central
-   X
-```
-
-debe continuar:
-
-```text
-Node → Node
-Node → Zone
-Local Automation
-Safety
-Critical control
-```
-
-Puede perderse temporalmente:
-
-```text
-Global UI
-Global history
-External integrations
-Central orchestration
-```
-
-pero no necesariamente:
-
-```text
-security
-lighting
-climate
-local control
-```
-
----
-
-# 66. Zone Controller Failure
-
-Si un Zone Controller falla:
-
-```text
-Zone Controller
-       X
-```
-
-los nodos deben conservar:
-
-```text
-local configuration
-local entities
-critical automations
-safety functions
-```
-
-Cuando vuelva:
-
-```text
-Discovery
-↓
-Sync
-↓
-Reconciliation
-```
-
----
-
-# 67. Node Failure
-
-Un fallo de un Node debe afectar únicamente las funciones dependientes de él.
-
-Ejemplo:
-
-```text
-Node Kitchen OFFLINE
-
-Kitchen light
-Kitchen temperature
-Kitchen relay
-
-affected
-
-Living room
-Garage
-Security
-
-unaffected
-```
-
----
-
-# 68. Transport Failure
-
-El System Bus debe detectar la pérdida de un transporte.
-
-Ejemplo:
-
-```text
-Ethernet unavailable
-        ↓
-Wi-Fi available
-        ↓
-same logical bus
-```
-
-Si existen múltiples transportes compatibles, el sistema puede cambiar de ruta.
-
----
-
-# 69. Multi-Transport
-
-Un Node puede disponer de:
-
-```text
-Wi-Fi
-Ethernet
-CAN
-RS485
-```
-
-El modelo lógico permanece:
-
-```text
 Node
- ↓
-System Bus
 ```
 
-y el router selecciona:
+Un nodo también puede aplicar reglas locales.
+
+Por ejemplo:
 
 ```text
-best transport
+Usuario → abrir válvula industrial
 ```
 
-según:
-
-* disponibilidad;
-* latencia;
-* prioridad;
-* coste;
-* confiabilidad;
-* alcance.
+puede ser rechazado aunque el mensaje haya sido autenticado.
 
 ---
 
-# 70. Transport Priority
+# 45. Protección contra replay
 
-Ejemplo:
-
-```text
-Ethernet
-    >
-Wi-Fi
-    >
-Thread
-    >
-Mesh
-```
-
-Pero la prioridad debe ser configurable.
-
-En una instalación industrial:
+Los mensajes sensibles deberán utilizar mecanismos como:
 
 ```text
-CAN
-    >
-RS485
-    >
-Wi-Fi
-```
-
-podría ser más apropiado.
-
----
-
-# 71. Routing Table
-
-Un nodo puede mantener información como:
-
-```json
-{
-  "routes": [
-    {
-      "destination": "zone.living",
-      "transport": "ethernet",
-      "cost": 10
-    },
-    {
-      "destination": "zone.garage",
-      "transport": "can",
-      "cost": 20
-    }
-  ]
-}
-```
-
-La implementación final podrá utilizar estructuras más compactas.
-
----
-
-# 72. Bus Topology
-
-La plataforma debe permitir:
-
-```text
-Star
-Tree
-Mesh
-Point-to-point
-Bus
-Hybrid
-```
-
-Ejemplo:
-
-```text
-              Central
-             /       \
-          Zone A    Zone B
-         /   \      /   \
-      Node  Node  Node  Node
-```
-
-No debe existir dependencia arquitectónica de una única topología.
-
----
-
-# 73. Physical Bus vs Logical Bus
-
-Ejemplo:
-
-```text
-LOGICAL
-
-light.living.main
-       ↓
-System Bus
-
-
-PHYSICAL
-
-Ethernet
-192.168.x.x
-```
-
-Otro caso:
-
-```text
-LOGICAL
-
-light.living.main
-       ↓
-System Bus
-
-
-PHYSICAL
-
-CAN
-ID 0x123
-```
-
-La Entity es la misma.
-
----
-
-# 74. CAN
-
-CAN puede utilizarse como transporte de bajo nivel.
-
-El System Bus debe mapear:
-
-```text
-Bus Message
-    ↓
-CAN frame(s)
-```
-
-Debe contemplar:
-
-* fragmentación;
-* reensamblado;
-* prioridad;
-* CAN ID;
-* timeout;
-* CRC proporcionado por CAN;
-* autenticación a nivel superior cuando corresponda.
-
----
-
-# 75. RS485
-
-RS485 es un medio físico.
-
-No debe confundirse con:
-
-```text
-Modbus
-```
-
-La arquitectura puede soportar:
-
-```text
-System Bus
-    ↓
-RS485 Adapter
-    ↓
-Modbus
-```
-
-pero también otros protocolos.
-
----
-
-# 76. Modbus
-
-Modbus debe considerarse un protocolo/adaptador externo.
-
-Ejemplo:
-
-```text
-System Bus
-    ↓
-Modbus Adapter
-    ↓
-RS485
-    ↓
-Industrial Sensor
-```
-
-El registro Modbus no debe aparecer en el modelo lógico de la Entity.
-
----
-
-# 77. MQTT
-
-MQTT puede actuar como:
-
-```text
-Transport Adapter
-```
-
-o:
-
-```text
-Integration Transport
-```
-
-Ejemplo:
-
-```text
-System Bus
-    ↓
-MQTT Adapter
-    ↓
-Broker
-```
-
-El modelo interno no debe depender de MQTT.
-
----
-
-# 78. MQTT Topic Mapping
-
-Ejemplo:
-
-```text
-Entity:
-light.living.main
-```
-
-puede mapearse a:
-
-```text
-automation/site/home/entity/light/living/main
-```
-
-Pero el topic es una implementación del adaptador.
-
-Cambiar el topic no cambia:
-
-```text
-entity_id
-```
-
----
-
-# 79. WebSocket
-
-WebSocket es especialmente útil para:
-
-* Web UI;
-* streaming de estados;
-* eventos;
-* comandos;
-* dashboards.
-
-Arquitectura:
-
-```text
-Browser
-   ↓
-WebSocket
-   ↓
-API Layer
-   ↓
-System Bus
-```
-
-El navegador no debe hablar directamente con GPIO.
-
----
-
-# 80. Matter
-
-Matter se considera una integración/protocolo externo.
-
-Arquitectura:
-
-```text
-Matter
-   ↓
-Matter Adapter
-   ↓
-Entity Model
-   ↓
-System Bus
-```
-
-La entidad interna permanece independiente de:
-
-```text
-endpoint
-cluster
-attribute
-```
-
----
-
-# 81. External Systems
-
-Sistemas como:
-
-* Home Assistant;
-* Homey;
-* SmartThings;
-* Apple Home;
-* Google Home;
-* Alexa;
-* aplicaciones propias;
-
-deben conectarse mediante adaptadores.
-
-```text
-External Ecosystem
-       ↓
-Integration Adapter
-       ↓
-System Bus
-       ↓
-Entity Model
-```
-
----
-
-# 82. Loop Prevention
-
-Las integraciones pueden producir loops.
-
-Ejemplo:
-
-```text
-Home Assistant
-      ↓
-Command
-      ↓
-System
-      ↓
-State
-      ↓
-Home Assistant
-      ↓
-Command
-      ↓
-...
-```
-
-El sistema debe utilizar:
-
-```text
-source
-origin
-correlation_id
 message_id
+timestamp
+nonce
+sequence
+expiration
 ```
 
-para detectar loops.
+para impedir reutilizar mensajes antiguos.
 
 ---
 
-# 83. Event Propagation
+# 46. Deduplicación
 
-Un evento puede propagarse:
-
-```text
-Sensor Node
-    ↓
-Zone
-    ↓
-Central
-    ↓
-Integration
-```
-
-Pero no necesariamente debe propagarse a todas las capas.
-
-La política debe depender de:
-
-```text
-event type
-priority
-scope
-subscriptions
-```
-
----
-
-# 84. Subscriptions
-
-Los consumidores podrán suscribirse a:
-
-```text
-entity
-domain
-zone
-group
-event type
-state changes
-device
-```
+Cada receptor deberá poder detectar mensajes duplicados cuando el QoS lo requiera.
 
 Ejemplo:
 
 ```text
-subscribe:
-zone.living
+message_id = ABC
+
+receive ABC
+execute
+
+receive ABC again
+detect duplicate
+do not execute twice
+```
+
+El período de retención de IDs dependerá de:
+
+```text
+RAM
+Flash
+QoS
+criticidad
+```
+
+---
+
+# 47. Fragmentación
+
+El System Bus no deberá asumir un tamaño de paquete ilimitado.
+
+Los transportes tienen diferentes límites.
+
+Por ejemplo:
+
+```text
+CAN
+RS485
+UDP
+TCP
+Matter
+Wi-Fi
+```
+
+pueden tener diferentes restricciones.
+
+El System Bus deberá proporcionar:
+
+```text
+message size
+fragmentation
+reassembly
+maximum payload
+```
+
+cuando el transporte lo requiera.
+
+Los mensajes grandes deberán evitarse siempre que sea posible.
+
+---
+
+# 48. Configuración
+
+La configuración del System Bus deberá poder definir:
+
+```text
+transport
+priority
+QoS
+timeouts
+retry
+routing
+subscriptions
+security
+buffer sizes
+```
+
+Los valores críticos deberán estar protegidos contra configuraciones incompatibles.
+
+---
+
+# 49. Hardware Profile
+
+El System Bus puede depender de las capacidades declaradas por el Hardware Profile.
+
+Ejemplo:
+
+```text
+NODE_ETH_WROOM_LAN8720_REV_A
+```
+
+puede ofrecer:
+
+```text
+Ethernet
+Wi-Fi
+CAN
+UART
+I2C
+SPI
+```
+
+Mientras:
+
+```text
+NODE_BASIC_C3_REV_A
+```
+
+puede ofrecer:
+
+```text
+Wi-Fi
+UART
+I2C
+SPI
+```
+
+La aplicación utilizará únicamente los transportes disponibles.
+
+---
+
+# 50. Build Profile
+
+El Build Profile determina qué implementación se compila.
+
+Ejemplo:
+
+```ini
+build_flags =
+    -D BOARD_ESP32_WROOM
+    -D ETH_LAN8720
 ```
 
 o:
 
-```text
-subscribe:
-binary_sensor.*
+```ini
+build_flags =
+    -D BOARD_ESP32_S3
+    -D ETH_W5500
 ```
+
+El System Bus no deberá tener que duplicar la lógica de aplicación para cada board.
 
 ---
 
-# 85. Subscription Example
+# 51. FreeRTOS
 
-```json
-{
-  "message_type": "subscription",
-  "payload": {
-    "filters": [
-      {
-        "zone_id": "zone.living",
-        "domain": "light"
-      }
-    ]
-  }
-}
-```
+El System Bus deberá integrarse naturalmente con FreeRTOS.
 
----
-
-# 86. Event Filtering
-
-Los filtros pueden incluir:
+Arquitectura conceptual:
 
 ```text
-entity_id
-domain
-zone_id
-device_id
-event_type
-priority
-tag
-```
-
-Esto evita enviar información innecesaria a dispositivos pequeños.
-
----
-
-# 87. Backpressure
-
-Un consumidor lento no debe bloquear todo el bus.
-
-Ejemplo:
-
-```text
-High frequency sensor
-        ↓
-100 messages/s
-
-Slow consumer
-        ↓
-10 messages/s
-```
-
-El bus debe poder:
-
-* limitar;
-* agrupar;
-* descartar telemetry no crítica;
-* reducir frecuencia;
-* aplicar backpressure.
-
----
-
-# 88. State Coalescing
-
-Para estados que cambian rápidamente:
-
-```text
-20
-21
-22
-23
-24
-25
-```
-
-puede ser innecesario transmitir cada valor.
-
-El bus puede enviar:
-
-```text
-25
-```
-
-si los estados intermedios no son importantes.
-
-Esto no debe aplicarse a eventos críticos.
-
----
-
-# 89. High Frequency Telemetry
-
-Sensores como:
-
-* acelerómetros;
-* energía;
-* temperatura rápida;
-* corriente;
-* audio;
-* cámaras;
-
-pueden generar mucho tráfico.
-
-Se recomienda separar:
-
-```text
-control plane
-```
-
-de:
-
-```text
-telemetry plane
-```
-
----
-
-# 90. Control Plane
-
-Contiene:
-
-```text
-commands
-configuration
-discovery
-authentication
-synchronization
-critical events
-```
-
-Debe tener alta confiabilidad.
-
----
-
-# 91. Telemetry Plane
-
-Contiene:
-
-```text
-sensor samples
-diagnostics
-metrics
-high-frequency data
+Task Sensor
+     │
+     ▼
+Bus Queue
+     │
+     ▼
+System Bus Task
+     │
+     ├── Local subscribers
+     ├── Network transport
+     └── Storage
 ```
 
 Puede utilizar:
 
 ```text
-sampling
-aggregation
-batching
-compression
-coalescing
+Queue
+RingBuffer
+EventGroup
+TaskNotification
+Mutex
+Semaphore
+```
+
+según la necesidad.
+
+---
+
+# 52. Tasks recomendadas
+
+Una implementación puede separar:
+
+```text
+BusCoreTask
+TransportTask
+RoutingTask
+PersistenceTask
+DiagnosticsTask
+```
+
+Sin embargo, no se deberá crear una tarea por cada pequeña función sin justificación.
+
+En ESP32 con recursos limitados se deberá priorizar:
+
+```text
+menos tareas
+colas correctamente dimensionadas
+event-driven
+bloqueos mínimos
 ```
 
 ---
 
-# 92. Data Plane
+# 53. Task Pinning
 
-En futuras implementaciones puede distinguirse además:
-
-```text
-Control Plane
-Telemetry Plane
-Media/Data Plane
-```
-
-Por ejemplo:
+En plataformas con múltiples núcleos podrá utilizarse:
 
 ```text
-Camera
-    ↓
-Media/Data Plane
+Core 0
+├── Wi-Fi / networking
+├── System services
+└── Communication
+
+Core 1
+├── Automation
+├── Sensors
+└── Application
 ```
 
-No debe saturar:
+Pero el pinning no debe formar parte de la API lógica del System Bus.
 
-```text
-Control Plane
-```
+Es una decisión de implementación.
 
 ---
 
-# 93. Large Payloads
+# 54. Backpressure
 
-El System Bus no debe transportar indefinidamente grandes blobs.
-
-Para:
-
-* imágenes;
-* vídeo;
-* firmware;
-* archivos;
-* logs grandes;
-
-se recomienda utilizar:
-
-```text
-reference
-+
-metadata
-```
-
-Ejemplo:
-
-```json
-{
-  "message_type": "event",
-  "payload": {
-    "type": "camera.snapshot",
-    "resource": {
-      "id": "media_123",
-      "location": "/storage/snapshot/123.jpg"
-    }
-  }
-}
-```
-
----
-
-# 94. Fragmentation
-
-Si un transporte tiene un MTU pequeño:
-
-```text
-Bus Message
-     ↓
-Fragment
-     ↓
-Transport
-     ↓
-Reassemble
-     ↓
-Bus Message
-```
-
-La fragmentación debe pertenecer al adaptador cuando sea posible.
-
-La aplicación no debería preocuparse por ella.
-
----
-
-# 95. Compression
-
-La compresión puede utilizarse para:
-
-* snapshots;
-* configuration;
-* logs;
-* telemetry agregada.
-
-No se debe comprimir indiscriminadamente mensajes pequeños.
-
----
-
-# 96. Message Expiration
-
-Un mensaje puede contener:
-
-```text
-created_at
-expires_at
-ttl
-```
-
-Ejemplo:
-
-```json
-{
-  "created_at": "2026-10-05T15:30:00Z",
-  "ttl_ms": 3000
-}
-```
-
-Un comando de movimiento puede quedar inválido después de 3 segundos.
-
----
-
-# 97. Critical Commands
-
-Los comandos críticos deben contener:
-
-```text
-priority
-authorization
-expiration
-correlation_id
-source
-safety constraints
-```
+El System Bus deberá controlar situaciones donde un productor genere mensajes más rápido que un consumidor.
 
 Ejemplo:
 
 ```text
-EMERGENCY STOP
+Sensor
+ ↓
+1000 msg/s
+ ↓
+Queue
+ ↓
+Consumer
+ ↓
+100 msg/s
 ```
 
-No debe depender de una cola de baja prioridad.
-
----
-
-# 98. Emergency Communication
-
-La plataforma debe permitir un canal lógico de emergencia.
-
-Ejemplo:
+Esto puede producir:
 
 ```text
-Emergency event
-      ↓
-System Bus
-      ↓
-Critical priority
-      ↓
-Local nodes
-      ↓
-Actuators
-```
-
-El mecanismo físico concreto dependerá de la aplicación.
-
-Para funciones donde una comunicación digital no sea suficiente como medida de seguridad, deberán utilizarse circuitos de seguridad independientes.
-
----
-
-# 99. Watchdog
-
-El System Bus puede supervisar:
-
-```text
-message processing
-transport health
-queue health
-consumer health
-```
-
-Un watchdog debe poder detectar:
-
-```text
-bus blocked
 queue overflow
-transport dead
-consumer unresponsive
+RAM exhaustion
+latency
 ```
 
-Pero no debe reiniciar innecesariamente un sistema que continúa funcionando correctamente.
-
----
-
-# 100. FreeRTOS Integration
-
-En ESP32 el bus deberá integrarse con FreeRTOS.
-
-Arquitectura conceptual:
+Se deberán definir políticas:
 
 ```text
-┌─────────────────────────────┐
-│ Application Tasks           │
-└──────────────┬──────────────┘
-               │
-          Bus API
-               │
-               ▼
-┌─────────────────────────────┐
-│ System Bus Task             │
-└──────────────┬──────────────┘
-               │
-        Message Queues
-               │
-       ┌───────┼────────┐
-       ▼       ▼        ▼
-    Ethernet  CAN      RS485
+DROP_OLDEST
+DROP_NEWEST
+COALESCE
+BLOCK
+REJECT
+PRIORITIZE
 ```
-
-Las tareas de aplicación no deberían escribir directamente en sockets o buses físicos.
 
 ---
 
-# 101. Task Isolation
+# 55. Coalescing
 
-Cada transporte puede poseer su propia tarea o mecanismo de procesamiento.
+Para estados de alta frecuencia puede ser preferible mantener únicamente el valor más reciente.
 
 Ejemplo:
 
 ```text
-Bus Core
-Ethernet Task
-CAN Task
-RS485 Task
-MQTT Task
-WebSocket Task
+temperature:
+24.1
+24.2
+24.3
+24.4
+24.5
 ```
 
-El diseño final dependerá del dispositivo.
+En lugar de enviar todos los valores, puede enviarse:
+
+```text
+24.5
+```
+
+si los valores intermedios no son relevantes.
+
+Esto es especialmente útil para:
+
+* sensores;
+* telemetría;
+* posición;
+* intensidad;
+* temperatura;
+* nivel.
 
 ---
 
-# 102. Queue Architecture
+# 56. Rate limiting
 
-Ejemplo:
-
-```text
-Application
-     ↓
-Outgoing Queue
-     ↓
-System Bus
-     ↓
-Transport Queue
-     ↓
-Transport
-```
-
-Recepción:
+Los mensajes deberán poder limitarse por:
 
 ```text
-Transport
-     ↓
-Incoming Queue
-     ↓
-System Bus
-     ↓
-Routing
-     ↓
-Application
+device
+entity
+message_type
+transport
+integration
 ```
+
+Esto evita que un sensor o módulo defectuoso sature el sistema.
 
 ---
 
-# 103. Priority Queues
+# 57. Health y diagnóstico
 
-Puede utilizarse:
-
-```text
-Emergency Queue
-Critical Queue
-Normal Queue
-Background Queue
-```
-
-o una cola única con prioridad.
-
-La elección depende de RAM y rendimiento.
-
----
-
-# 104. Memory Ownership
-
-Los mensajes deben tener una política clara de ownership.
-
-Nunca se debe permitir que:
-
-```text
-Task A
-```
-
-libere memoria mientras:
-
-```text
-Task B
-```
-
-todavía utiliza el mensaje.
-
-Se recomienda definir claramente:
-
-```text
-allocate
-own
-transfer
-process
-release
-```
-
----
-
-# 105. Zero-Copy
-
-En dispositivos con pocos recursos puede utilizarse zero-copy cuando sea beneficioso.
-
-Especialmente:
-
-```text
-Ethernet
-Wi-Fi
-CAN
-large telemetry
-```
-
-Pero la complejidad no debe comprometer la estabilidad.
-
----
-
-# 106. Buffer Limits
-
-Cada transporte debe definir:
-
-```text
-max_message_size
-rx_buffer
-tx_buffer
-queue_size
-fragment_size
-```
-
-Los límites deben poder conocerse mediante capabilities del transporte.
-
----
-
-# 107. Bus Health
-
-El System Bus debe exponer métricas como:
+El System Bus deberá generar métricas como:
 
 ```text
 messages_sent
 messages_received
 messages_failed
-messages_retried
 messages_dropped
-queue_depth
-latency
+queue_usage
+retry_count
 timeouts
+latency
 transport_errors
+duplicate_messages
 ```
 
----
-
-# 108. Latency
-
-El sistema debe poder medir:
+Estas métricas estarán disponibles para:
 
 ```text
-message latency
-command latency
-transport latency
-execution latency
-```
-
-Ejemplo:
-
-```text
-UI
- ↓ 5 ms
 Central
- ↓ 8 ms
-Zone
- ↓ 3 ms
-Node
- ↓ 2 ms
-Actuator
-
-Total ≈ 18 ms
+Web UI
+API
+Diagnostics
+Logs
 ```
 
 ---
 
-# 109. Distributed Tracing
+# 58. Latencia
 
-Cada operación importante debe poder rastrearse:
+Deberán registrarse, cuando sea posible:
+
+```text
+created_at
+sent_at
+received_at
+processed_at
+completed_at
+```
+
+Esto permite calcular:
+
+```text
+transport latency
+queue latency
+processing latency
+end-to-end latency
+```
+
+---
+
+# 59. Trazabilidad
+
+Una operación distribuida deberá poder seguirse mediante:
 
 ```text
 request_id
 correlation_id
 message_id
-source
-destination
-timestamp
+command_id
 ```
-
-Esto permite generar:
-
-```text
-Trace:
-req_123
-
-Web
- ↓
-Central
- ↓
-Zone
- ↓
-Node
- ↓
-Entity
-```
-
----
-
-# 110. Diagnostics Mode
-
-El System Bus debe poder disponer de un modo diagnóstico.
-
-Permite inspeccionar:
-
-```text
-messages
-routes
-latency
-errors
-retries
-queues
-subscriptions
-```
-
-Pero debe existir protección para evitar que el diagnóstico sature el sistema.
-
----
-
-# 111. Logging
-
-Los logs deben poder clasificarse:
-
-```text
-error
-warning
-info
-debug
-trace
-```
-
-`trace` debe estar desactivado normalmente en dispositivos pequeños.
-
----
-
-# 112. Security Logging
-
-Los eventos de seguridad deben registrarse independientemente de los logs normales.
-
-Ejemplos:
-
-```text
-authentication failed
-authorization denied
-unknown device
-invalid signature
-replay detected
-credential revoked
-```
-
----
-
-# 113. Protocol Independence
-
-La aplicación debe poder ejecutar:
-
-```text
-light.living.main → ON
-```
-
-sin saber si finalmente se utiliza:
-
-```text
-Ethernet
-Wi-Fi
-CAN
-RS485
-MQTT
-Matter
-Thread
-```
-
-Esta es una de las propiedades arquitectónicas más importantes del sistema.
-
----
-
-# 114. Example — Ethernet
-
-```text
-Application
-     ↓
-System Bus
-     ↓
-Ethernet Adapter
-     ↓
-TCP/TLS
-     ↓
-Remote Node
-```
-
----
-
-# 115. Example — CAN
-
-```text
-Application
-     ↓
-System Bus
-     ↓
-CAN Adapter
-     ↓
-CAN Frame
-     ↓
-Remote Node
-```
-
----
-
-# 116. Example — RS485 / Modbus
-
-```text
-Application
-     ↓
-System Bus
-     ↓
-Modbus Adapter
-     ↓
-RS485
-     ↓
-Industrial Device
-```
-
----
-
-# 117. Example — MQTT
-
-```text
-Application
-     ↓
-System Bus
-     ↓
-MQTT Adapter
-     ↓
-Broker
-     ↓
-Remote Node
-```
-
----
-
-# 118. Example — Matter
-
-```text
-External Matter Controller
-          ↓
-Matter Adapter
-          ↓
-Entity Model
-          ↓
-System Bus
-          ↓
-Device
-```
-
----
-
-# 119. Example — Local Automation
-
-```text
-PIR
- ↓
-binary_sensor.hall.motion
- ↓
-Event
- ↓
-Automation Engine
- ↓
-Command
- ↓
-light.hall
-```
-
-El Central puede no participar.
-
----
-
-# 120. Example — Central Automation
-
-```text
-Sensor
-   ↓
-Node
-   ↓
-Zone
-   ↓
-Central
-   ↓
-Automation
-   ↓
-Command
-   ↓
-Zone
-   ↓
-Node
-   ↓
-Actuator
-```
-
----
-
-# 121. Example — External Integration
-
-```text
-Home Assistant
-       ↓
-Integration Adapter
-       ↓
-System Bus
-       ↓
-Entity
-       ↓
-Node
-       ↓
-Actuator
-```
-
----
-
-# 122. Failure Scenario — Internet
-
-```text
-Internet
-   X
-```
-
-Debe continuar:
-
-```text
-Node
- ↓
-Zone
- ↓
-Central
-```
-
-si la red local sigue disponible.
-
-Las integraciones cloud pueden quedar offline.
-
----
-
-# 123. Failure Scenario — Central
-
-```text
-Central
-   X
-```
-
-Debe continuar:
-
-```text
-Node
- ↓
-Local Automation
- ↓
-Actuator
-```
-
-y:
-
-```text
-Node ↔ Node
-```
-
-cuando exista conectividad directa.
-
----
-
-# 124. Failure Scenario — Wi-Fi
-
-Si Wi-Fi falla:
-
-```text
-Wi-Fi
-  X
-```
-
-y existe Ethernet:
-
-```text
-System Bus
-     ↓
-Ethernet
-```
-
-La aplicación no debe necesitar cambios.
-
----
-
-# 125. Failure Scenario — Node
-
-```text
-Node A
-   X
-```
-
-Los demás nodos continúan funcionando.
-
-El sistema debe generar:
-
-```text
-device.unavailable
-```
-
-para las entidades afectadas.
-
----
-
-# 126. Failure Scenario — Transport
-
-Si un transporte falla:
-
-```text
-Transport A
-     X
-```
-
-el adaptador informa:
-
-```text
-transport unavailable
-```
-
-y el router puede:
-
-```text
-retry
-failover
-queue
-```
-
-según política.
-
----
-
-# 127. System Bus API
-
-La API interna conceptual debe ser pequeña.
 
 Ejemplo:
 
-```cpp
-bus.publish(message);
-bus.send(message);
-bus.request(message);
-bus.subscribe(filter, callback);
-bus.unsubscribe(subscription);
-bus.isAvailable(destination);
-```
-
-La implementación puede cambiar.
-
----
-
-# 128. `publish`
-
-Para mensajes sin respuesta directa:
-
 ```text
-event
-state
-telemetry
-```
-
----
-
-# 129. `send`
-
-Para mensajes dirigidos:
-
-```text
-command
-configuration
-```
-
----
-
-# 130. `request`
-
-Para operaciones request/response:
-
-```text
-discovery
-health
-configuration query
-state query
-```
-
----
-
-# 131. `subscribe`
-
-Para escuchar:
-
-```text
-events
-state changes
-telemetry
-```
-
----
-
-# 132. Local Bus
-
-Cada dispositivo puede disponer de un bus local.
-
-```text
-Sensor
+User
  ↓
-Local Bus
- ↓
-Entity
-```
-
-No todo necesita salir a la red.
-
----
-
-# 133. Node Bus
-
-Un Node puede contener:
-
-```text
-Hardware
- ↓
-Resources
- ↓
-Entities
- ↓
-Local System Bus
-```
-
----
-
-# 134. Zone Bus
-
-Un Zone Controller coordina:
-
-```text
-Node A
-Node B
-Node C
-```
-
-mediante el mismo modelo.
-
----
-
-# 135. Central Bus
-
-Central puede proporcionar:
-
-```text
-Global routing
-Global subscriptions
-Global automations
-Integration bridge
 API
-```
-
-pero sigue utilizando el mismo bus lógico.
-
----
-
-# 136. Bus Federation
-
-Múltiples dominios de bus pueden conectarse.
-
-Ejemplo:
-
-```text
-Site A
-   │
-   └── Central A
-          │
-       Federation
-          │
-   Central B
-   │
-Site B
-```
-
-Esto permite futuras instalaciones multi-site.
-
----
-
-# 137. Multi-Site
-
-El `site_id` debe formar parte del direccionamiento lógico.
-
-Ejemplo:
-
-```text
-site.home
-site.office
-site.greenhouse
-site.boat
-```
-
-Una aplicación podría acceder a:
-
-```text
-site.office.zone.serverroom
-```
-
-sin cambiar el modelo.
-
----
-
-# 138. Bus Namespace
-
-Se recomienda un namespace lógico:
-
-```text
-site
-zone
-device
-entity
-```
-
-Ejemplo:
-
-```text
-site.home
-zone.home.living
-device.home.living.controller
-light.home.living.main
-```
-
-La sintaxis final de IDs podrá simplificarse, pero debe existir una jerarquía inequívoca.
-
----
-
-# 139. System Bus vs API
-
-No son lo mismo.
-
-### API
-
-Pensada para:
-
-* usuarios;
-* aplicaciones;
-* integraciones;
-* clientes externos.
-
-### System Bus
-
-Pensado para:
-
-* comunicación interna;
-* nodos;
-* Central;
-* automatizaciones;
-* sincronización.
-
-Arquitectura:
-
-```text
-External App
-     ↓
-API
-     ↓
+ ↓ request_id
+Central
+ ↓ correlation_id
 System Bus
-     ↓
+ ↓ command_id
 Node
+ ↓
+Actuator
+ ↓
+STATE
 ```
+
+Esto simplifica enormemente el diagnóstico.
 
 ---
 
-# 140. System Bus vs Database
+# 60. Error handling
 
-Tampoco son lo mismo.
-
-```text
-System Bus
-→ comunicación en tiempo real
-
-Database
-→ persistencia
-```
-
-Un evento puede:
-
-```text
-System Bus
-    ├── Automation
-    ├── Integration
-    └── Database
-```
-
----
-
-# 141. System Bus vs MQTT
-
-MQTT es un transporte/protocolo.
-
-System Bus es una abstracción arquitectónica.
-
-Por lo tanto:
-
-```text
-System Bus ≠ MQTT
-```
-
-La plataforma puede funcionar:
-
-```text
-sin MQTT
-```
-
----
-
-# 142. System Bus vs Matter
-
-De igual manera:
-
-```text
-System Bus ≠ Matter
-```
-
-Matter es una integración/protocolo externo.
-
----
-
-# 143. Message Lifecycle
-
-Todo mensaje debería seguir conceptualmente:
-
-```text
-CREATE
-  ↓
-VALIDATE
-  ↓
-AUTHORIZE
-  ↓
-ROUTE
-  ↓
-TRANSMIT
-  ↓
-RECEIVE
-  ↓
-DEDUPLICATE
-  ↓
-PROCESS
-  ↓
-ACK / RESULT
-  ↓
-TRACE
-```
-
----
-
-# 144. Invalid Message
-
-Si un mensaje no cumple el schema:
-
-```text
-RECEIVE
-   ↓
-VALIDATE
-   ↓
-INVALID
-   ↓
-REJECT
-```
-
-Nunca debe ejecutarse parcialmente.
-
----
-
-# 145. Unauthorized Message
-
-```text
-RECEIVE
-   ↓
-VALIDATE
-   ↓
-AUTHORIZATION
-   ↓
-DENIED
-```
-
-Debe generar:
-
-```text
-UNAUTHORIZED
-```
-
-o:
-
-```text
-FORBIDDEN
-```
-
-según el caso.
-
----
-
-# 146. Unknown Destination
-
-Si el destino no existe:
-
-```text
-DESTINATION_NOT_FOUND
-```
-
-El mensaje no debe retransmitirse indefinidamente.
-
----
-
-# 147. Transport Unavailable
-
-Si el destino existe pero no existe una ruta:
-
-```text
-NO_ROUTE
-```
-
-El bus puede:
-
-```text
-queue
-retry
-fail
-```
-
-según la política.
-
----
-
-# 148. Message Expired
-
-Si:
-
-```text
-now > expires_at
-```
-
-el mensaje debe descartarse.
-
-Debe producir:
-
-```text
-MESSAGE_EXPIRED
-```
-
-cuando la semántica requiera informar el fallo.
-
----
-
-# 149. Queue Policy
-
-Cada cola deberá definir:
-
-```text
-capacity
-priority
-retention
-drop policy
-persistence
-```
-
-No debe existir una única cola ilimitada.
-
----
-
-# 150. Rate Limiting
-
-El bus debe limitar fuentes que generen demasiado tráfico.
-
-Ejemplo:
-
-```text
-sensor → 1000 msg/s
-```
-
-puede limitarse a:
-
-```text
-100 msg/s
-```
-
-cuando no sea crítico.
-
-Esto protege:
-
-* RAM;
-* CPU;
-* Wi-Fi;
-* Ethernet;
-* Central;
-* almacenamiento.
-
----
-
-# 151. Security Rate Limiting
-
-También debe limitar:
-
-```text
-authentication attempts
-discovery requests
-command requests
-API-to-bus requests
-```
-
-para reducir abuso.
-
----
-
-# 152. Bus Capacity
-
-Cada dispositivo debe conocer sus límites aproximados:
-
-```text
-max_messages_per_second
-max_payload_size
-queue_capacity
-```
-
-Los dispositivos pequeños pueden anunciar límites inferiores.
-
----
-
-# 153. Graceful Degradation
-
-Cuando el bus está saturado:
-
-```text
-critical control
-    ↓
-continues
-
-high priority
-    ↓
-continues
-
-normal
-    ↓
-reduced
-
-telemetry
-    ↓
-throttled
-```
-
-Nunca debe sacrificarse una función crítica para mantener telemetry.
-
----
-
-# 154. Bus Configuration
-
-La configuración debe poder definir:
-
-```text
-transport priority
-retry policy
-queue sizes
-message limits
-subscriptions
-routing
-security
-```
-
-Pero los valores peligrosos deben estar protegidos.
-
----
-
-# 155. No-Code Configuration
-
-El usuario normal debe poder configurar desde Web UI:
-
-```text
-Transportes
-Nodes
-Zones
-Routes
-Subscriptions
-Integrations
-Priorities
-```
-
-sin modificar firmware.
-
----
-
-# 156. Expert Mode
-
-Opciones avanzadas pueden existir para:
-
-* CAN ID;
-* RS485;
-* Modbus;
-* MTU;
-* QoS;
-* retry;
-* queue;
-* routing.
-
-Pero deben permanecer separadas del modo normal.
-
----
-
-# 157. Configuration Example
-
-```text
-System Bus
-────────────────────────────
-
-Transportes
-
-☑ Ethernet
-☑ Wi-Fi
-☐ CAN
-☐ RS485
-☑ MQTT
-
-Prioridad
-
-Ethernet     [1]
-Wi-Fi        [2]
-CAN          [1]
-
-Colas
-
-Critical    32
-Normal      128
-Low         64
-```
-
----
-
-# 158. Compatibility
-
-Los mensajes deben indicar:
-
-```text
-schema_version
-protocol_version
-capabilities
-```
+Los errores deben tener formato uniforme.
 
 Ejemplo:
 
 ```json
 {
-  "protocol_version": "1.0",
-  "schema_version": "1.0.0"
+  "message_type": "error",
+  "code": "ENTITY_UNAVAILABLE",
+  "message": "Entity is currently unavailable",
+  "request_id": "01J...",
+  "correlation_id": "01J..."
+}
+```
+
+Códigos posibles:
+
+```text
+INVALID_MESSAGE
+INVALID_SCHEMA
+UNAUTHORIZED
+FORBIDDEN
+UNKNOWN_ENTITY
+ENTITY_UNAVAILABLE
+DEVICE_OFFLINE
+TRANSPORT_ERROR
+TIMEOUT
+QUEUE_FULL
+INVALID_COMMAND
+COMMAND_REJECTED
+EXECUTION_FAILED
+```
+
+---
+
+# 61. Discovery
+
+Al conectarse un nodo:
+
+```text
+Node boot
+   ↓
+Network available
+   ↓
+System Bus discovery
+   ↓
+Announce
+   ↓
+Central / Zone Controller
+   ↓
+Request metadata
+   ↓
+Response
+   ↓
+Register
+```
+
+El nodo debe poder funcionar aunque el proceso de discovery no se complete.
+
+---
+
+# 62. Device Announce
+
+Ejemplo conceptual:
+
+```json
+{
+  "message_type": "discovery",
+  "operation": "announce",
+  "device_id": "node-001",
+  "hardware_profile": "NODE_ETH_WROOM_LAN8720_REV_A",
+  "firmware": "1.4.0"
 }
 ```
 
 ---
 
-# 159. Protocol Version
+# 63. State Synchronization
 
-Debe diferenciarse:
-
-```text
-protocol_version
-```
-
-de:
+Cuando un dispositivo se reconecta:
 
 ```text
-schema_version
+Node reconnect
+     ↓
+Discovery
+     ↓
+State synchronization
+     ↓
+Configuration reconciliation
+     ↓
+Normal operation
 ```
 
-### Protocol
+No se debe asumir que Central conoce necesariamente el último estado real.
 
-Cómo funciona el System Bus.
-
-### Schema
-
-Qué estructura tienen los datos.
+El nodo es autoridad sobre sus recursos físicos.
 
 ---
 
-# 160. Negotiation
+# 64. Authority
 
-Al conectarse dos nodos:
+La autoridad depende del tipo de dato.
+
+Ejemplo:
 
 ```text
-Node A
-  ↓
-HELLO
-  ↓
-Node B
-  ↓
-CAPABILITIES
-  ↓
-VERSION NEGOTIATION
-  ↓
-READY
+GPIO output actual
+        ↓
+Node
+```
+
+```text
+Zone automation
+        ↓
+Zone Controller
+```
+
+```text
+Global user configuration
+        ↓
+Central
+```
+
+```text
+External weather data
+        ↓
+External provider
+```
+
+La autoridad deberá quedar definida en el modelo de datos.
+
+---
+
+# 65. Conflictos
+
+Puede ocurrir:
+
+```text
+Central desired = ON
+Node actual = OFF
+```
+
+o:
+
+```text
+Central configuration version = 10
+Node configuration version = 12
+```
+
+El sistema deberá comparar:
+
+```text
+version
+timestamp
+authority
+source
+priority
+```
+
+antes de sobrescribir información.
+
+---
+
+# 66. Versionado
+
+El System Bus tendrá su propio versionado.
+
+Ejemplo:
+
+```text
+Bus Protocol Version
+1.0
+```
+
+y los mensajes:
+
+```text
+schema_version = 1.0
+```
+
+El cambio de versión deberá ser compatible siempre que sea posible.
+
+---
+
+# 67. Compatibilidad
+
+Se recomienda utilizar:
+
+```text
+backward compatibility
+forward compatibility
+capability negotiation
+```
+
+Un dispositivo puede anunciar:
+
+```text
+supported_schema_versions
+supported_message_types
+supported_qos
+supported_transports
 ```
 
 ---
 
-# 161. HELLO Message
+# 68. Capability Negotiation
 
 Ejemplo:
 
 ```json
 {
-  "message_type": "hello",
-  "protocol_version": "1.0",
-  "device_id": "device.node01",
-  "capabilities": [
-    "command",
-    "event",
-    "state",
-    "discovery",
-    "sync"
+  "supported": {
+    "commands": [
+      "turn_on",
+      "turn_off",
+      "set_brightness"
+    ],
+    "qos": [
+      "best_effort",
+      "reliable"
+    ]
+  }
+}
+```
+
+Esto evita asumir capacidades inexistentes.
+
+---
+
+# 69. Comunicación con API
+
+La API externa y el System Bus deben utilizar el mismo modelo conceptual.
+
+```text
+REST API
+   ↓
+Command
+   ↓
+System Bus
+   ↓
+Node
+```
+
+No:
+
+```text
+REST API
+   ↓
+GPIO directamente
+```
+
+---
+
+# 70. Comunicación con WebSocket
+
+WebSocket puede utilizarse para transmitir:
+
+```text
+state updates
+events
+diagnostics
+command status
+```
+
+Ejemplo:
+
+```text
+Browser
+   │
+   │ WebSocket
+   ▼
+Central
+   │
+   │ System Bus
+   ▼
+Node
+```
+
+---
+
+# 71. Comunicación con MQTT
+
+MQTT puede mapearse:
+
+```text
+System Bus Event
+      ↓
+MQTT Adapter
+      ↓
+topic
+```
+
+y:
+
+```text
+MQTT message
+      ↓
+MQTT Adapter
+      ↓
+System Bus Command
+```
+
+---
+
+# 72. Automatizaciones
+
+Las automatizaciones deben utilizar el System Bus.
+
+Ejemplo:
+
+```text
+EVENT
+motion_detected
+       ↓
+Condition
+time > 22:00
+       ↓
+COMMAND
+light.hall = 20%
+```
+
+No deberán existir conexiones directas rígidas entre módulos.
+
+---
+
+# 73. Escenas
+
+Una escena puede generar múltiples comandos:
+
+```text
+Scene: Night
+   │
+   ├── Light 1 → OFF
+   ├── Light 2 → 20%
+   ├── Thermostat → 21°C
+   └── Cover → CLOSE
+```
+
+Todos pasan por el System Bus.
+
+---
+
+# 74. Modos del sistema
+
+El System Bus puede transportar cambios de modo:
+
+```text
+HOUSE.MODE = NORMAL
+HOUSE.MODE = SLEEP
+HOUSE.MODE = AWAY
+HOUSE.MODE = VACATION
+HOUSE.MODE = MAINTENANCE
+HOUSE.MODE = EMERGENCY
+```
+
+Las automatizaciones pueden reaccionar ante estos eventos.
+
+---
+
+# 75. Ejemplo de modo SLEEP
+
+```text
+HOUSE.MODE = SLEEP
+```
+
+Puede producir:
+
+```text
+Bedroom PIR
+    ↓
+EVENT
+    ↓
+Log only
+```
+
+Mientras:
+
+```text
+Hall PIR
+    ↓
+EVENT
+    ↓
+Automation
+    ↓
+Light hall = 15%
+```
+
+Y:
+
+```text
+Exterior PIR
+    ↓
+EVENT
+    ↓
+Security automation
+    ↓
+Alarm
+```
+
+El System Bus permite que todos utilicen la misma infraestructura.
+
+---
+
+# 76. Seguridad crítica
+
+Las funciones críticas deben tener prioridad sobre mensajes normales.
+
+Ejemplo:
+
+```text
+CRITICAL
+Emergency stop
+     ↓
+System Bus
+     ↓
+Actuator
+```
+
+No deberá quedar detrás de una cola llena de:
+
+```text
+telemetry
+logs
+diagnostics
+```
+
+---
+
+# 77. Fallo del System Bus
+
+El System Bus es infraestructura crítica.
+
+Por ello, los módulos críticos deberán tener una estrategia de degradación.
+
+Ejemplo:
+
+```text
+System Bus unavailable
+        ↓
+Local safety logic
+        ↓
+Safe state
+```
+
+Nunca deberá asumirse que una automatización de seguridad puede depender exclusivamente de una cola de comunicación no disponible.
+
+---
+
+# 78. Fail-safe
+
+Los actuadores deberán definir:
+
+```text
+safe_state
+startup_state
+communication_loss_state
+```
+
+Ejemplo:
+
+```text
+Pump:
+communication loss → OFF
+```
+
+o:
+
+```text
+Ventilation:
+communication loss → 50%
+```
+
+según la aplicación.
+
+Esto deberá configurarse según el dispositivo y la criticidad.
+
+---
+
+# 79. Watchdog
+
+El System Bus podrá integrarse con:
+
+```text
+Task Watchdog
+Hardware Watchdog
+Transport Watchdog
+Node Watchdog
+```
+
+Un bloqueo de comunicación no debe bloquear indefinidamente el sistema.
+
+---
+
+# 80. Persistencia
+
+No todos los mensajes deben persistirse.
+
+Se recomienda:
+
+| Mensaje       | Persistencia     |
+| ------------- | ---------------- |
+| Telemetry     | opcional         |
+| Event         | según criticidad |
+| Command       | según QoS        |
+| Configuration | sí               |
+| Discovery     | no               |
+| Diagnostics   | opcional         |
+| Safety Event  | sí               |
+
+---
+
+# 81. Prioridad de almacenamiento
+
+Cuando el almacenamiento sea limitado:
+
+```text
+Safety
+   >
+Configuration
+   >
+Important Events
+   >
+State
+   >
+Telemetry
+   >
+Diagnostics
+```
+
+---
+
+# 82. Ejemplo completo
+
+Supongamos:
+
+```text
+binary_sensor.front_door
+```
+
+detecta apertura.
+
+Flujo:
+
+```text
+Sensor
+   ↓
+EVENT
+door_opened
+   ↓
+System Bus
+   ↓
+Automation
+   ↓
+Check:
+HOUSE.MODE == AWAY
+   ↓
+COMMAND
+alarm.house → trigger
+   ↓
+System Bus
+   ↓
+Alarm Node
+   ↓
+STATE
+alarm = triggered
+   ↓
+Event
+alarm_triggered
+   ↓
+Central
+   ↓
+Notification
+```
+
+Ningún módulo necesita conocer el GPIO del sensor ni el relé de la alarma.
+
+---
+
+# 83. Ejemplo con diferentes transportes
+
+```text
+Door Sensor
+ESP32-C3
+   │
+   │ Wi-Fi
+   ▼
+Central
+   │
+   │ Ethernet
+   ▼
+Zone Controller
+   │
+   │ CAN
+   ▼
+Alarm Node
+```
+
+La lógica sigue siendo:
+
+```text
+EVENT
+   ↓
+COMMAND
+   ↓
+STATE
+```
+
+El transporte es transparente.
+
+---
+
+# 84. Ejemplo RS485
+
+```text
+Industrial Sensor
+      │
+      │ Modbus RTU
+      ▼
+RS485 Node
+      │
+      │ System Bus
+      ▼
+Zone Controller
+      │
+      ▼
+Automation
+```
+
+La automatización no necesita conocer:
+
+```text
+slave_id
+register
+baudrate
+parity
+```
+
+Esos datos pertenecen al driver/adapter.
+
+---
+
+# 85. Ejemplo CAN
+
+```text
+Temperature Node
+      │
+      │ CAN
+      ▼
+Zone Controller
+      │
+      ▼
+System Bus
+      │
+      ▼
+Climate Function
+```
+
+La aplicación utiliza:
+
+```text
+sensor.zone.temperature
+```
+
+no:
+
+```text
+CAN_ID 0x123
+```
+
+---
+
+# 86. Estructura recomendada del código
+
+```text
+src/
+├── bus/
+│   ├── SystemBus.hpp
+│   ├── SystemBus.cpp
+│   ├── BusMessage.hpp
+│   ├── BusRouter.hpp
+│   ├── BusRouter.cpp
+│   ├── BusSubscription.hpp
+│   ├── BusQoS.hpp
+│   ├── BusPriority.hpp
+│   ├── BusSecurity.hpp
+│   └── transports/
+│       ├── LocalTransport.hpp
+│       ├── WifiTransport.hpp
+│       ├── EthernetTransport.hpp
+│       ├── CanTransport.hpp
+│       ├── Rs485Transport.hpp
+│       ├── ThreadTransport.hpp
+│       └── MatterTransport.hpp
+```
+
+---
+
+# 87. Separación del código
+
+La aplicación:
+
+```cpp
+bus.send(command);
+```
+
+El transporte:
+
+```cpp
+transport.send(message);
+```
+
+El driver:
+
+```cpp
+ethernet.write(...);
+```
+
+La separación debe mantenerse.
+
+---
+
+# 88. Ejemplo de interfaz
+
+Conceptualmente:
+
+```cpp
+class SystemBus {
+public:
+
+    bool begin();
+
+    bool publish(
+        const BusMessage& message
+    );
+
+    bool subscribe(
+        const BusSubscription& subscription,
+        BusCallback callback
+    );
+
+    bool request(
+        const BusMessage& request,
+        BusResponse& response
+    );
+
+    bool sendCommand(
+        const Command& command
+    );
+
+    bool emitEvent(
+        const Event& event
+    );
+
+    bool publishState(
+        const EntityState& state
+    );
+
+    void update();
+};
+```
+
+La interfaz definitiva podrá modificarse durante la implementación.
+
+---
+
+# 89. No bloquear la aplicación
+
+Las operaciones de comunicación distribuida deberían ser preferentemente asíncronas.
+
+Evitar:
+
+```cpp
+sendCommand();
+waitForever();
+```
+
+Preferir:
+
+```cpp
+sendCommand();
+```
+
+y luego:
+
+```text
+COMMAND_STATUS
+```
+
+o:
+
+```text
+EVENT
+STATE
+```
+
+---
+
+# 90. Timeouts
+
+Todo intercambio que espere respuesta deberá tener timeout.
+
+Ejemplo:
+
+```text
+request timeout = 2 s
+```
+
+Después:
+
+```text
+retry
+```
+
+hasta:
+
+```text
+max_retries
+```
+
+Finalmente:
+
+```text
+TIMEOUT
+```
+
+---
+
+# 91. Retries
+
+Los retries dependerán del tipo de mensaje.
+
+No se recomienda repetir indefinidamente.
+
+Ejemplo:
+
+```text
+retry = 3
+backoff = exponential
+```
+
+Conceptualmente:
+
+```text
+100 ms
+200 ms
+400 ms
+```
+
+---
+
+# 92. Circuit Breaker
+
+Para un nodo persistentemente inaccesible puede utilizarse:
+
+```text
+CLOSED
+   ↓
+FAILURES
+   ↓
+OPEN
+   ↓
+WAIT
+   ↓
+HALF_OPEN
+   ↓
+CLOSED
+```
+
+Esto evita inundar la red con retries.
+
+---
+
+# 93. Comunicación con dispositivos externos
+
+El System Bus también puede servir para integrar:
+
+```text
+Modbus devices
+CAN devices
+MQTT devices
+Matter devices
+REST devices
+```
+
+mediante gateways/adapters.
+
+---
+
+# 94. Gateway
+
+Un Gateway puede traducir:
+
+```text
+Protocol A
+   ↓
+Gateway
+   ↓
+System Bus
+   ↓
+Protocol B
+```
+
+Ejemplo:
+
+```text
+Modbus RTU
+   ↓
+RS485 Gateway
+   ↓
+System Bus
+   ↓
+MQTT
+```
+
+---
+
+# 95. Regla para Gateways
+
+Un Gateway no deberá mezclar innecesariamente:
+
+```text
+protocol conversion
+application logic
+automation logic
+```
+
+Su función principal es adaptar comunicaciones.
+
+---
+
+# 96. Topologías
+
+El System Bus debe soportar:
+
+## Estrella
+
+```text
+        Central
+       /   |   \
+     Node Node Node
+```
+
+## Árbol
+
+```text
+Central
+   |
+Zone A
+ /   \
+N1   N2
+```
+
+## Distribuida
+
+```text
+Node A ─ Node B
+  │        │
+Node C ─ Node D
+```
+
+## Híbrida
+
+```text
+Ethernet
+   │
+Zone
+ ┌─┴─────┐
+CAN    RS485
+ │       │
+Nodes   Sensors
+```
+
+---
+
+# 97. Topología física vs lógica
+
+La topología física no debe definir la lógica de la aplicación.
+
+Por ejemplo:
+
+```text
+light.living_room
+```
+
+debe seguir siendo la misma entidad aunque cambie de:
+
+```text
+Wi-Fi
+```
+
+a:
+
+```text
+Ethernet
+```
+
+o:
+
+```text
+CAN
+```
+
+---
+
+# 98. Configuración dinámica
+
+El System Bus debe poder detectar cambios de configuración.
+
+Ejemplo:
+
+```text
+Entity
+light.garage
+```
+
+puede pasar de:
+
+```text
+Node A
+```
+
+a:
+
+```text
+Node B
+```
+
+sin cambiar necesariamente:
+
+```text
+entity_id
+```
+
+si la identidad lógica sigue representando la misma función.
+
+---
+
+# 99. Persistencia de identidad
+
+La identidad lógica debe ser estable.
+
+No debe depender de:
+
+```text
+IP
+MAC
+GPIO
+CAN ID
+Modbus address
+```
+
+Esto es especialmente importante cuando se reemplaza hardware.
+
+---
+
+# 100. Reemplazo de nodos
+
+Ejemplo:
+
+```text
+Node A
+   ↓
+light.garage
+```
+
+Node A falla.
+
+Se instala:
+
+```text
+Node B
+```
+
+y se reasigna:
+
+```text
+light.garage
+```
+
+La automatización:
+
+```text
+IF motion.garage
+THEN light.garage ON
+```
+
+puede permanecer intacta.
+
+---
+
+# 101. System Bus y Device Model
+
+La relación oficial es:
+
+```text
+Hardware
+    ↓
+Resource
+    ↓
+Capability
+    ↓
+Entity
+    ↓
+Device Model
+    ↓
+System Bus
+    ↓
+Communication
+```
+
+El System Bus no reemplaza al Device Model.
+
+El Device Model define:
+
+> qué existe.
+
+El System Bus define:
+
+> cómo se comunica.
+
+---
+
+# 102. System Bus y API
+
+La API define:
+
+> cómo clientes externos interactúan con el sistema.
+
+El System Bus define:
+
+> cómo componentes internos y nodos se comunican.
+
+Ambos utilizan el mismo modelo lógico.
+
+---
+
+# 103. System Bus y MQTT
+
+MQTT define:
+
+> un mecanismo/protocolo de mensajería.
+
+El System Bus define:
+
+> la semántica interna de comunicación de la plataforma.
+
+Por lo tanto:
+
+```text
+MQTT ≠ System Bus
+```
+
+MQTT puede ser un transporte/adaptador.
+
+---
+
+# 104. System Bus y CAN
+
+CAN define un protocolo de comunicación de bajo nivel.
+
+El System Bus proporciona:
+
+```text
+routing lógico
+entity addressing
+commands
+events
+state
+QoS
+correlation
+```
+
+Por lo tanto:
+
+```text
+CAN ≠ System Bus
+```
+
+---
+
+# 105. System Bus y RS485
+
+RS485 es principalmente una capa física.
+
+Modbus RTU es un protocolo que puede funcionar sobre RS485.
+
+El System Bus se sitúa por encima:
+
+```text
+System Bus
+    ↓
+Modbus Adapter
+    ↓
+RS485
+```
+
+---
+
+# 106. Registro de transportes
+
+Cada nodo deberá poder anunciar:
+
+```json
+{
+  "transports": [
+    {
+      "type": "ethernet",
+      "status": "connected"
+    },
+    {
+      "type": "wifi",
+      "status": "connected"
+    },
+    {
+      "type": "can",
+      "status": "available"
+    }
   ]
 }
 ```
 
 ---
 
-# 162. READY State
+# 107. Selección de ruta
 
-Un nodo sólo debe comenzar operaciones distribuidas después de:
+Cuando existan varios caminos:
 
 ```text
-Identity
-↓
-Authentication
-↓
-Protocol negotiation
-↓
-Schema compatibility
-↓
-Ready
+Node A
+ ├── Wi-Fi ────── Central
+ └── Ethernet ─── Central
 ```
 
-Sin embargo, sus funciones locales críticas pueden iniciar antes.
+el sistema podrá seleccionar según:
+
+```text
+availability
+priority
+latency
+reliability
+cost
+configuration
+```
+
+Por ejemplo:
+
+```text
+Ethernet > Wi-Fi
+```
+
+para el backbone cuando ambos estén disponibles.
 
 ---
 
-# 163. Boot Order
+# 108. Redundancia
 
-Principio:
+En instalaciones avanzadas podrá existir:
 
 ```text
-BOOT
+Primary Transport
+Secondary Transport
+```
+
+Ejemplo:
+
+```text
+Ethernet
+   ↓
+Primary
+
+Wi-Fi
+   ↓
+Backup
+```
+
+El cambio deberá ser transparente para la aplicación.
+
+---
+
+# 109. Failover
+
+Ejemplo:
+
+```text
+Ethernet DOWN
+      ↓
+Transport Manager
+      ↓
+Wi-Fi
+      ↓
+System Bus continues
+```
+
+Las funciones no deberían tener que reiniciarse.
+
+---
+
+# 110. Heartbeat
+
+Los nodos podrán utilizar:
+
+```text
+heartbeat
+```
+
+para indicar disponibilidad.
+
+Ejemplo:
+
+```text
+Node → heartbeat → Central
+```
+
+La ausencia de heartbeat durante un intervalo configurable puede producir:
+
+```text
+DEVICE_UNAVAILABLE
+```
+
+---
+
+# 111. Last Will / Offline Event
+
+Los transportes que lo soporten podrán informar desconexión.
+
+Pero la plataforma no debe depender exclusivamente de un mecanismo específico.
+
+También deberá existir:
+
+```text
+timeout
+heartbeat
+health check
+```
+
+---
+
+# 112. Calidad de información
+
+Los mensajes de estado podrán incluir:
+
+```text
+quality:
+  good
+  uncertain
+  stale
+  invalid
+  unavailable
+```
+
+Esto es especialmente importante en sensores.
+
+---
+
+# 113. Provenance
+
+El System Bus deberá poder transportar información de origen.
+
+Ejemplo:
+
+```json
+{
+  "source": "sensor.living.temperature",
+  "origin_device": "node-003",
+  "origin_module": "AHT20"
+}
+```
+
+Esto permite saber de dónde procede un dato.
+
+---
+
+# 114. Confianza
+
+Los sensores avanzados podrán proporcionar:
+
+```text
+confidence
+```
+
+Ejemplo:
+
+```text
+temperature = 24.3
+confidence = 0.98
+```
+
+Esto puede ser utilizado posteriormente por:
+
+* IA;
+* predicción;
+* detección de anomalías;
+* automatizaciones.
+
+---
+
+# 115. IA
+
+La futura capa de IA no debe comunicarse directamente con GPIO.
+
+Debe utilizar:
+
+```text
+Entities
+States
+Events
+Commands
+```
+
+Ejemplo:
+
+```text
+AI
  ↓
-Hardware
- ↓
-Local Configuration
- ↓
-Safety
- ↓
-Local Automation
+predicts:
+temperature will rise
  ↓
 System Bus
  ↓
-Network
+Automation
  ↓
-Discovery
+COMMAND
  ↓
-Synchronization
- ↓
-Central
-```
-
-Nunca:
-
-```text
-BOOT
- ↓
-WAIT FOR CENTRAL
- ↓
-START
+Ventilation
 ```
 
 ---
 
-# 164. Safe Boot
+# 116. Cámara
 
-En caso de configuración corrupta:
-
-```text
-Stored config
-      X
-```
-
-el nodo debe:
+Una cámara puede publicar:
 
 ```text
-fallback configuration
-      ↓
-safe state
-      ↓
-local operation
-```
-
----
-
-# 165. Bus Recovery
-
-Después de un fallo:
-
-```text
-Transport failure
-      ↓
-Reconnect
-      ↓
-HELLO
-      ↓
-Authentication
-      ↓
-Sync
-      ↓
-Resume
-```
-
-No se debe asumir que el estado anterior sigue siendo válido.
-
----
-
-# 166. State Resynchronization
-
-Al reconectar:
-
-```text
-Current local state
-        +
-Known remote state
-        ↓
-Compare
-        ↓
-Resolve
-```
-
-La política depende de la entidad.
-
-Ejemplo:
-
-```text
-Sensor:
-local actual state → authoritative
-
-Actuator:
-actual + desired → reconcile
-```
-
----
-
-# 167. Configuration Reconciliation
-
-Si:
-
-```text
-Central desired = v20
-Node applied = v18
-```
-
-el sistema debe actualizar.
-
-Pero si:
-
-```text
-Node reports hardware incompatibility
-```
-
-no debe aplicar ciegamente.
-
-Debe generar:
-
-```text
-CONFIGURATION_FAILED
-```
-
----
-
-# 168. Hardware Capability Mismatch
-
-Ejemplo:
-
-Central solicita:
-
-```text
-brightness
-```
-
-pero el Node sólo soporta:
-
-```text
-on_off
-```
-
-Debe responder:
-
-```text
-CAPABILITY_NOT_SUPPORTED
-```
-
-No debe intentar emular silenciosamente una capacidad inexistente.
-
----
-
-# 169. Command Validation
-
-Antes de ejecutar:
-
-```text
-Schema
- ↓
-Capability
- ↓
-Availability
- ↓
-Permission
- ↓
-Safety
- ↓
-Execute
-```
-
----
-
-# 170. Event Ordering
-
-No siempre se puede garantizar orden global en un sistema distribuido.
-
-Por eso debe utilizarse:
-
-```text
-timestamp
-sequence
-source
-```
-
-cuando sea necesario.
-
-Nunca debe suponerse que dos mensajes recibidos en diferente transporte están globalmente ordenados sólo por su orden de llegada.
-
----
-
-# 171. Exactly Once
-
-No debe diseñarse la plataforma suponiendo que todos los transportes proporcionan exactamente una entrega.
-
-Debe utilizarse:
-
-```text
-at-least-once delivery
-+
-deduplication
-+
-idempotency
-```
-
-cuando la operación lo requiera.
-
----
-
-# 172. At-Most-Once
-
-Para telemetry no crítica:
-
-```text
-send once
-drop if unavailable
-```
-
-puede ser suficiente.
-
----
-
-# 173. At-Least-Once
-
-Para configuración:
-
-```text
-send
-retry
-deduplicate
-```
-
-es preferible.
-
----
-
-# 174. Critical Delivery
-
-Para comandos críticos:
-
-```text
-send
-ACK
-execute
-RESULT
-verify
-```
-
-y, cuando sea necesario, una verificación adicional del estado real.
-
----
-
-# 175. Command Verification
-
-Ejemplo:
-
-```text
-Command:
-turn_on light
-
-ACK
- ↓
-Executed
- ↓
-State:
-ON
-```
-
-Si:
-
-```text
-actual_state = OFF
-```
-
-el sistema debe marcar:
-
-```text
-command_result = failed
+EVENT:
+person_detected
 ```
 
 o:
 
 ```text
-state mismatch
+ENTITY:
+camera.front
+```
+
+La aplicación no necesita conocer:
+
+```text
+camera driver
+DMA
+frame buffer
+GPIO
 ```
 
 ---
 
-# 176. Distributed Transactions
+# 117. Energy
 
-No se recomienda crear transacciones distribuidas complejas para operaciones normales.
-
-Para escenas:
+Un medidor energético puede publicar:
 
 ```text
-Scene
+sensor.house.power
+sensor.house.energy
+sensor.house.voltage
+sensor.house.current
+```
+
+Las automatizaciones consumen esas entidades.
+
+Ejemplo:
+
+```text
+power > 5000 W
+      ↓
+EVENT
+      ↓
+Automation
+      ↓
+disable non-critical loads
+```
+
+---
+
+# 118. Water
+
+El mismo modelo puede utilizar:
+
+```text
+water.flow
+water.pressure
+water.level
+water.consumption
+```
+
+Esto permite utilizar la misma plataforma en:
+
+* viviendas;
+* agricultura;
+* riego;
+* industria;
+* instalaciones marinas.
+
+---
+
+# 119. Industrial
+
+Para aplicaciones industriales se podrán representar:
+
+```text
+motor.speed
+pump.state
+valve.position
+pressure
+temperature
+flow
+alarm
+emergency_stop
+```
+
+El System Bus debe seguir siendo independiente de si el dato proviene de:
+
+```text
+CAN
+Modbus
+Ethernet
+GPIO
+analog input
+```
+
+---
+
+# 120. Marine
+
+La misma arquitectura puede utilizar:
+
+```text
+engine.rpm
+tank.level
+bilge.water
+battery.voltage
+battery.current
+navigation.position
+alarm.engine
+```
+
+Los transportes pueden variar sin modificar el modelo lógico.
+
+---
+
+# 121. Testing
+
+El System Bus debe poder probarse sin hardware.
+
+Debe existir un:
+
+```text
+MockTransport
+```
+
+Ejemplo:
+
+```text
+Test
  ↓
-Commands
-```
-
-cada comando puede tener:
-
-```text
-correlation_id
-```
-
-pero la plataforma debe aceptar ejecución parcial cuando no sea posible garantizar atomicidad.
-
----
-
-# 177. Scene Failure
-
-Ejemplo:
-
-```text
-Scene Movie
-
-Light A → success
-Light B → success
-Curtain → failed
-```
-
-El sistema debe conservar:
-
-```text
-partial success
-```
-
-y generar diagnóstico.
-
----
-
-# 178. Atomic Operations
-
-Sólo operaciones especialmente diseñadas podrán requerir atomicidad.
-
-Ejemplo:
-
-```text
-Safety interlock
-```
-
-Estas operaciones deben estar explícitamente definidas y no asumirse por defecto.
-
----
-
-# 179. System Bus Events
-
-Eventos internos recomendados:
-
-```text
-node.online
-node.offline
-node.degraded
-
-device.available
-device.unavailable
-
-entity.created
-entity.updated
-entity.removed
-entity.state_changed
-
-command.requested
-command.accepted
-command.executed
-command.failed
-command.timeout
-
-configuration.updated
-configuration.applied
-configuration.failed
-
-transport.connected
-transport.disconnected
-
-security.authentication_failed
-security.authorization_denied
-```
-
----
-
-# 180. Reserved Names
-
-Se deben reservar namespaces:
-
-```text
-system.*
-node.*
-device.*
-entity.*
-command.*
-configuration.*
-security.*
-transport.*
-diagnostic.*
-```
-
-Esto evita conflictos futuros.
-
----
-
-# 181. Custom Events
-
-Los módulos pueden definir:
-
-```text
-custom.*
-```
-
-o un namespace propio:
-
-```text
-greenhouse.*
-marine.*
-industrial.*
-agriculture.*
-```
-
-Ejemplo:
-
-```text
-greenhouse.irrigation.started
-```
-
----
-
-# 182. Module Independence
-
-Un módulo no debe modificar directamente otro módulo.
-
-Debe comunicarse mediante:
-
-```text
-System Bus
-+
-Data Model
-```
-
-Ejemplo:
-
-```text
-Security Module
-       ↓
-event
-       ↓
-Lighting Module
-```
-
----
-
-# 183. Plugin Architecture
-
-Los plugins pueden:
-
-```text
-publish events
-subscribe events
-send commands
-register entities
-register capabilities
-```
-
-pero deben utilizar las mismas reglas del bus.
-
----
-
-# 184. Third-Party Extensions
-
-Una aplicación externa puede:
-
-```text
-GET state
-SUBSCRIBE event
-SEND command
-```
-
-a través de la API.
-
-La API puede convertir:
-
-```text
-REST
+Mock System Bus
  ↓
-System Bus
+Fake Node
+ ↓
+Expected Event
+```
+
+Esto permite ejecutar pruebas en:
+
+```text
+PC
+CI/CD
+PlatformIO
+```
+
+sin hardware físico.
+
+---
+
+# 122. Tests mínimos
+
+Deberán existir pruebas para:
+
+* creación de mensajes;
+* validación;
+* routing;
+* subscriptions;
+* filtros;
+* prioridades;
+* QoS;
+* retry;
+* timeout;
+* deduplicación;
+* correlation;
+* TTL;
+* serialization;
+* deserialization;
+* state synchronization;
+* transport failover;
+* queue overflow;
+* security;
+* version compatibility.
+
+---
+
+# 123. Conformance Tests
+
+Cada nuevo Transport Adapter deberá cumplir una interfaz común.
+
+Ejemplo:
+
+```text
+LocalTransport
+WiFiTransport
+EthernetTransport
+CANTransport
+RS485Transport
+```
+
+deberán superar el mismo conjunto de pruebas conceptuales.
+
+Esto garantiza que cambiar de transporte no cambie la semántica.
+
+---
+
+# 124. Observabilidad
+
+El System Bus deberá poder inspeccionarse desde la interfaz web.
+
+Ejemplo:
+
+```text
+System → Communication → System Bus
+```
+
+Mostrar:
+
+```text
+Messages/s
+Queue usage
+Connected transports
+Latency
+Errors
+Retries
+Dropped messages
+Nodes online
+Nodes offline
 ```
 
 ---
 
-# 185. System Bus as Internal Contract
+# 125. Modo diagnóstico
 
-El System Bus se convierte así en el contrato común entre:
+Un modo técnico podrá mostrar:
 
 ```text
-Firmware
+Message ID
+Source
+Destination
+Transport
+QoS
+Priority
+Timestamp
+Latency
+Payload size
+Status
+```
+
+Este modo debe estar restringido a usuarios con permisos adecuados.
+
+---
+
+# 126. Logs
+
+Los logs deberán poder diferenciar:
+
+```text
+BUS
+TRANSPORT
+ROUTING
+SECURITY
+COMMAND
+EVENT
+STATE
+ERROR
+```
+
+Ejemplo:
+
+```text
+[BUS] command accepted
+[ROUTING] destination=node-004
+[TRANSPORT] ethernet
+[ACK] received
+[COMMAND] executed
+```
+
+---
+
+# 127. Evitar exceso de logs
+
+No se deberá registrar cada telemetría de alta frecuencia en niveles normales.
+
+Los logs detallados podrán activarse mediante:
+
+```text
+DEBUG
+TRACE
+```
+
+durante diagnóstico.
+
+---
+
+# 128. Persistencia de eventos críticos
+
+Eventos críticos deberán poder almacenarse localmente.
+
+Ejemplo:
+
+```text
+alarm_triggered
+emergency_stop
+over_temperature
+water_leak
+fire_detected
+```
+
+Esto permite recuperar información después de una desconexión.
+
+---
+
+# 129. Prioridad de funcionamiento
+
+La arquitectura debe seguir:
+
+```text
+1. Seguridad
+2. Control local
+3. Automatización local
+4. Automatización de zona
+5. Coordinación Central
+6. Integraciones externas
+7. Cloud
+```
+
+El System Bus debe respetar esta prioridad.
+
+---
+
+# 130. Regla de diseño
+
+Nunca implementar una función crítica de esta forma:
+
+```text
+Sensor
+ ↓
+Internet
+ ↓
+Cloud
+ ↓
 Central
-API
+ ↓
+Command
+ ↓
+Actuator
+```
+
+cuando pueda implementarse:
+
+```text
+Sensor
+ ↓
+Local System Bus
+ ↓
+Automation
+ ↓
+Actuator
+```
+
+---
+
+# 131. Evolución futura
+
+El System Bus deberá permitir agregar:
+
+```text
+Matter
+Thread
+Zigbee
+CANopen
+Ethernet/IP
+OPC UA Gateway
+BACnet Gateway
+KNX Gateway
+LoRaWAN Gateway
+```
+
+sin rediseñar el Device Model.
+
+La incorporación de un nuevo transporte debe consistir principalmente en:
+
+```text
+nuevo adapter
++
+routing
++
+capability negotiation
++
+tests
+```
+
+---
+
+# 132. Regla de desacoplamiento
+
+La aplicación nunca deberá hacer:
+
+```cpp
+if (transport == WIFI) {
+    ...
+}
+
+if (transport == CAN) {
+    ...
+}
+
+if (transport == MODBUS) {
+    ...
+}
+```
+
+para resolver lógica de negocio.
+
+Debe hacer:
+
+```cpp
+bus.send(command);
+```
+
+y permitir que el System Bus resuelva el transporte.
+
+---
+
+# 133. Excepción: características específicas del transporte
+
+Puede existir código específico cuando una característica realmente pertenezca al transporte.
+
+Ejemplo:
+
+```text
+CAN bitrate
+Ethernet link speed
+Wi-Fi RSSI
+RS485 baudrate
+```
+
+Pero deberá quedar en:
+
+```text
+Transport Adapter
+Diagnostics
+Hardware Configuration
+```
+
+y no en:
+
+```text
+Automation Logic
+```
+
+---
+
+# 134. Estructura conceptual completa
+
+```text
+┌─────────────────────────────────────────────┐
+│                  USER/API                   │
+└──────────────────────┬──────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────┐
+│              DEVICE MODEL                   │
+│                                             │
+│ Entity / State / Command / Event            │
+└──────────────────────┬──────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────┐
+│                SYSTEM BUS                   │
+│                                             │
+│ Routing                                     │
+│ QoS                                         │
+│ Priority                                    │
+│ Retry                                       │
+│ Timeout                                     │
+│ Correlation                                 │
+│ Deduplication                               │
+│ Security                                    │
+└──────────────────────┬──────────────────────┘
+                       │
+             ┌─────────┼─────────┐
+             │         │         │
+             ▼         ▼         ▼
+          Local     Network    Field
+             │         │         │
+          FreeRTOS   Ethernet   CAN
+                    Wi-Fi       RS485
+                    Thread      Modbus
+                    Matter
+```
+
+---
+
+# 135. Flujo completo de un comando
+
+```text
+Usuario
+   ↓
 Web UI
-Automation Engine
-Integrations
-Plugins
-```
-
-Esto reduce acoplamiento.
-
----
-
-# 186. Golden Architecture
-
-La arquitectura final:
-
-```text
-                         ┌───────────────┐
-                         │   WEB / APP   │
-                         └───────┬───────┘
-                                 │
-                                API
-                                 │
-                         ┌───────▼───────┐
-                         │    CENTRAL    │
-                         │    ESP32-S3   │
-                         └───────┬───────┘
-                                 │
-                          SYSTEM BUS
-                                 │
-               ┌─────────────────┼─────────────────┐
-               │                 │                 │
-            Ethernet           Wi-Fi             CAN
-               │                 │                 │
-            Zone A             Zone B            Zone C
-               │                 │                 │
-          ┌────┴────┐       ┌────┴────┐       ┌────┴────┐
-          │         │       │         │       │         │
-        Node      Node    Node      Node    Node      Node
-          │         │       │         │       │         │
-        Sensor    Relay   Sensor    Light   Motor     Sensor
+   ↓
+REST API
+   ↓
+Authorization
+   ↓
+Command
+   ↓
+System Bus
+   ↓
+Routing
+   ↓
+Transport Selection
+   ↓
+Ethernet/Wi-Fi/CAN/RS485
+   ↓
+Destination Node
+   ↓
+System Bus
+   ↓
+Module
+   ↓
+Hardware Driver
+   ↓
+Actuator
+   ↓
+Actual State
+   ↓
+STATE EVENT
+   ↓
+System Bus
+   ↓
+Central / API / UI
 ```
 
 ---
 
-# 187. Golden Rule
+# 136. Regla de oro
 
-> **Ninguna aplicación debe depender directamente del transporte físico.**
-
-La aplicación debe pensar:
+La arquitectura completa debe respetar:
 
 ```text
-"enciende la luz del living"
+Hardware
+   ↓
+Resource
+   ↓
+Capability
+   ↓
+Entity
+   ↓
+Device Model
+   ↓
+System Bus
+   ↓
+Transport
 ```
 
-y no:
-
-```text
-"activa GPIO 12 mediante MQTT".
-```
+Nunca al revés.
 
 ---
 
-# 188. Architecture Rule
+# 137. Principios definitivos
 
-> **El System Bus transporta intención y estado; los adaptadores traducen esa intención al medio físico correspondiente.**
+El System Bus debe cumplir:
 
----
-
-# 189. Local-First Rule
-
-> **El bus debe facilitar la coordinación distribuida, pero nunca convertir al Central en un punto único de fallo para las funciones críticas.**
-
----
-
-# 190. Final Design Rule
-
-La arquitectura completa queda:
-
-```text
-┌──────────────────────────────┐
-│         USER / APP           │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│             API              │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│        AUTOMATION             │
-│        FUNCTIONS              │
-│        SCENES                 │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│         DATA MODEL            │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│         SYSTEM BUS            │
-│                              │
-│ Routing                      │
-│ Priority                     │
-│ ACK/NACK                     │
-│ Retry                        │
-│ Deduplication                │
-│ Discovery                    │
-│ Synchronization              │
-│ Security                     │
-│ Failover                     │
-└──────────────┬───────────────┘
-               ↓
-┌──────────────────────────────┐
-│      TRANSPORT ADAPTERS       │
-├────────┬────────┬────────────┤
-│Ethernet│ Wi-Fi  │ CAN / RS485│
-│ MQTT   │ WS     │ Matter     │
-└────────┴────────┴────────────┘
-               ↓
-┌──────────────────────────────┐
-│        DEVICES / NODES        │
-└──────────────────────────────┘
-```
+1. **No depender de un transporte específico.**
+2. **Utilizar identidades lógicas.**
+3. **Separar comandos, estados y eventos.**
+4. **Soportar comunicación local y distribuida.**
+5. **Permitir autonomía sin Central.**
+6. **Permitir múltiples transportes simultáneamente.**
+7. **Soportar QoS y prioridades.**
+8. **Soportar timeout y retry.**
+9. **Soportar deduplicación.**
+10. **Soportar correlation IDs.**
+11. **Permitir discovery.**
+12. **Permitir state synchronization.**
+13. **Integrarse con FreeRTOS.**
+14. **Ser testeable sin hardware.**
+15. **Permitir nuevos transportes sin modificar la aplicación.**
+16. **Mantener separación entre hardware y lógica.**
+17. **Permitir diagnóstico y observabilidad.**
+18. **Priorizar seguridad y autonomía local.**
+19. **Mantener compatibilidad entre versiones.**
+20. **No convertir MQTT, CAN, RS485 o Ethernet en dependencia arquitectónica.**
 
 ---
 
-# 191. Estado del documento
+# 138. Principio final
 
-```text
-Estado: Diseño arquitectónico base
+> **El System Bus es la columna vertebral lógica de comunicación de la plataforma.**
 
-Definido:
+El hardware puede cambiar.
 
-- System Bus lógico
-- separación Bus / Transport
-- Message Envelope
-- Message Types
-- Command
-- Event
-- State
-- ACK / NACK
-- Request ID
-- Correlation ID
-- Addressing
-- Routing
-- Broadcast
-- Multicast
-- Priority
-- TTL
-- Retry
-- Deduplication
-- Idempotency
-- QoS
-- Offline Queue
-- Discovery
-- Provisioning
-- Synchronization
-- State Reconciliation
-- Configuration Reconciliation
-- Heartbeat
-- Presence
-- Health
-- Security
-- Authentication
-- Authorization
-- Replay Protection
-- Transport Failover
-- Multi-Transport
-- FreeRTOS integration
-- Queue architecture
-- Backpressure
-- Rate limiting
-- Telemetry
-- Control Plane
-- Diagnostics
-- Distributed tracing
-- Local-first operation
-- Central failure handling
-- Zone failure handling
-- Node failure handling
+El MCU puede cambiar.
 
-Pendiente:
+El transporte puede cambiar.
 
-- especificación binaria
-- estructura definitiva de BusMessage
-- protocolo HELLO
-- protocolo DISCOVERY
-- protocolo SYNC
-- ACK/NACK formal
-- routing protocol
-- tablas de códigos de error
-- políticas QoS definitivas
-- seguridad criptográfica concreta
-- adaptación CAN
-- adaptación RS485
-- adaptación Ethernet
-- adaptación Wi-Fi
-- adaptación MQTT
-- integración Matter
-- pruebas de carga
-- pruebas de pérdida de paquetes
-- pruebas de recuperación
-```
+La topología puede cambiar.
 
----
+Un nodo puede ser reemplazado.
 
-# 192. Próximos documentos
+Ethernet puede cambiar por Wi-Fi.
 
-Con:
+Wi-Fi puede cambiar por CAN.
 
-```text
-DATA-MODEL.md
-        ↓
-DATA-SCHEMAS.md
-        ↓
-SYSTEM-BUS.md
-```
+RS485 puede cambiar por Ethernet.
 
-la siguiente capa recomendada es:
+Un dispositivo puede pasar de un ESP32-WROOM a un ESP32-S3.
 
-```text
-API-SPECIFICATION.md
-```
+Nada de esto debería obligar a modificar la lógica de las automatizaciones.
 
-que definirá cómo aplicaciones, Web UI, móvil e integraciones externas interactúan con:
+La aplicación debe seguir viendo:
 
 ```text
 Entities
+Capabilities
 States
 Commands
 Events
-Devices
-Zones
-Groups
+Functions
 Scenes
 Automations
 ```
 
-Después:
+y el System Bus debe encargarse de convertir esa comunicación lógica en el mecanismo físico apropiado.
 
-```text
-DISCOVERY-PROVISIONING.md
-```
-
-para definir cómo un ESP32 nuevo entra al sistema, se autentica, descubre sus recursos/capabilities, recibe configuración y pasa de `unknown` a `provisioned`.
-
-Finalmente:
-
-```text
-EVENT-MODEL.md
-CONFIGURATION-MODEL.md
-DATABASE-STORAGE.md
-AUTOMATION-ENGINE.md
-TESTING-VALIDATION.md
-```
-
----
-
-# 193. Principio arquitectónico final
-
-> **El System Bus es la columna vertebral lógica de la plataforma.**
-
-> **No importa si un mensaje viaja por Ethernet, Wi-Fi, CAN, RS485, MQTT, Thread, Matter o cualquier transporte futuro: para la aplicación debe seguir siendo el mismo Command, Event, State o Configuration Message.**
-
-> **La plataforma debe poder cambiar su infraestructura de comunicación sin tener que reescribir sus automatizaciones, entidades, funciones o integraciones.**
+> **La aplicación publica intenciones y consume eventos; el transporte es una implementación intercambiable.**
