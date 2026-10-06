@@ -1,162 +1,296 @@
 # API-SPECIFICATION.md
 
-# API Specification — Distributed Automation Platform
-
-> **Tipo:** Especificación de arquitectura y contrato de API
-> **Estado:** Diseño
+> **Sistema:** Plataforma de Automatización Distribuida
+> **Tipo:** Especificación técnica / Contrato de API
+> **Estado:** Planificación
 > **Versión:** 1.0.0
-> **Última actualización:** 2026-10-05
-> **Objetivo:** Definir la API REST, WebSocket y mecanismos de interacción externos con la plataforma de automatización distribuida.
+> **Última actualización:** 2026-10-06
+> **Compatibilidad:** ESP32 / ESP32-S3 / ESP32-C6 / ESP32-C5 / ESP32-H2 / ESP32-P4 y nodos compatibles
 
 ---
 
-# 1. Objetivo
+# 1. Propósito
 
-La API proporciona una interfaz uniforme para:
+Este documento define la especificación oficial de la **API de la Plataforma de Automatización Distribuida**.
 
-* Web UI;
-* aplicaciones móviles;
-* aplicaciones de escritorio;
-* aplicaciones de terceros;
-* integraciones;
-* servicios externos;
+La API permite que:
+
+* la interfaz web;
+* aplicaciones móviles futuras;
+* Central;
+* controladores de zona;
+* otros nodos;
 * herramientas de administración;
-* sistemas de monitoreo;
-* automatizaciones externas.
+* sistemas externos;
+* Home Assistant;
+* aplicaciones de terceros;
+* servicios de integración;
 
-La API debe permitir trabajar con:
+puedan consultar y controlar el sistema mediante una interfaz común y estable.
 
-* Sites;
-* Zones;
-* Groups;
-* Devices;
-* Resources;
-* Capabilities;
-* Entities;
-* States;
-* Commands;
-* Events;
-* Functions;
-* Scenes;
-* Automations;
-* System Modes;
-* History;
-* Diagnostics;
-* Users;
-* Integrations;
-* System configuration.
+La API debe abstraer completamente la implementación física del sistema.
 
----
+Un cliente no debería necesitar conocer:
 
-# 2. Principio fundamental
+* GPIO;
+* dirección I²C;
+* dirección SPI;
+* registro Modbus;
+* ID CAN;
+* tipo de expansor;
+* modelo exacto del sensor;
+* PHY Ethernet;
+* W5500;
+* LAN8720;
+* IP101;
+* tareas FreeRTOS;
+* arquitectura interna del firmware.
 
-> **La API expone el modelo lógico del sistema, no su implementación física.**
-
-Una aplicación debe poder hacer:
+El cliente trabaja con conceptos lógicos:
 
 ```text
-GET /api/v1/entities/light.living.main
-```
-
-y:
-
-```text
-POST /api/v1/entities/light.living.main/commands
-```
-
-sin conocer:
-
-```text
-GPIO
-PWM
-I2C
-SPI
-CAN ID
-Modbus register
-MQTT topic
-Ethernet IP
+Site
+Zone
+Group
+Device
+Resource
+Capability
+Entity
+Function
+Scene
+Automation
+Mode
+State
+Command
+Event
+Integration
 ```
 
 ---
 
-# 3. Arquitectura
+# 2. Objetivos
+
+La API debe proporcionar:
+
+1. Una interfaz REST uniforme.
+2. Identificadores estables.
+3. Comunicación local y distribuida.
+4. Operación Local-First.
+5. Compatibilidad con Central y nodos autónomos.
+6. Consultas de estado en tiempo real.
+7. Envío de comandos.
+8. Automatizaciones.
+9. Escenas.
+10. Eventos.
+11. Historial.
+12. Configuración.
+13. Diagnóstico.
+14. Descubrimiento.
+15. Integraciones externas.
+16. Control de acceso.
+17. Versionado.
+18. Compatibilidad hacia atrás.
+19. Operaciones asíncronas.
+20. Comunicación WebSocket.
+21. Posibilidad de utilizar MQTT u otros transportes.
+22. Posibilidad futura de utilizar CBOR u otros formatos compactos.
+
+---
+
+# 3. Documentos relacionados
+
+La API no define nuevamente el modelo completo del sistema.
+
+Se apoya en:
 
 ```text
-┌──────────────────────────────┐
-│          WEB / APP           │
-└──────────────┬───────────────┘
-               │
-          REST / WebSocket
-               │
+ARCHITECTURE.md
+        │
+        ▼
+DATA-MODEL.md
+        │
+        ▼
+DATA-SCHEMAS.md
+        │
+        ├──────────────┐
+        ▼              ▼
+SYSTEM-BUS.md    API-AUTHENTICATION-AUTHORIZATION.md
+        │              │
+        └──────┬───────┘
                ▼
-┌──────────────────────────────┐
-│          API LAYER           │
-│                              │
-│ Authentication               │
-│ Authorization                │
-│ Validation                   │
-│ Rate Limiting                │
-│ Serialization                │
-└──────────────┬───────────────┘
+       API-SPECIFICATION.md
                │
-               ▼
-┌──────────────────────────────┐
-│        APPLICATION           │
-│                              │
-│ Automations                  │
-│ Scenes                       │
-│ Functions                    │
-│ Entity Management            │
-└──────────────┬───────────────┘
-               │
-               ▼
-┌──────────────────────────────┐
-│         SYSTEM BUS           │
-└──────────────┬───────────────┘
-               │
-        ┌──────┼──────┐
-        ▼      ▼      ▼
-      Zone    Node    Integration
+        ┌──────┼─────────┐
+        ▼      ▼         ▼
+      Web    Mobile   Integrations
+```
+
+### Responsabilidad de cada documento
+
+| Documento                             | Responsabilidad                   |
+| ------------------------------------- | --------------------------------- |
+| `ARCHITECTURE.md`                     | Arquitectura general              |
+| `DATA-MODEL.md`                       | Conceptos y relaciones            |
+| `DATA-SCHEMAS.md`                     | Estructuras serializadas          |
+| `SYSTEM-BUS.md`                       | Comunicación interna              |
+| `API-AUTHENTICATION-AUTHORIZATION.md` | Autenticación y permisos          |
+| `API-SPECIFICATION.md`                | Interfaz externa de la plataforma |
+
+---
+
+# 4. Principios fundamentales
+
+## 4.1 Local-First
+
+La API debe poder funcionar sin Internet.
+
+```text
+Internet
+   │
+   X
+   │
+Central ───── Nodes
+   │
+   └──── Local API
+```
+
+La pérdida de Internet no debe impedir:
+
+* consultar dispositivos localmente;
+* controlar dispositivos localmente;
+* ejecutar automatizaciones;
+* utilizar escenas;
+* utilizar funciones críticas;
+* acceder a la interfaz web local.
+
+---
+
+# 5.2 La API no depende de Internet
+
+La API puede estar disponible mediante:
+
+* Ethernet;
+* Wi-Fi;
+* red local;
+* Access Point del dispositivo;
+* Central;
+* controlador de zona;
+* nodo individual.
+
+Internet solamente es necesario para funciones externas.
+
+---
+
+# 5.3 La API no es el System Bus
+
+La API y el System Bus son capas diferentes.
+
+```text
+                 CLIENTES
+                    │
+             REST / WebSocket
+                    │
+                    ▼
+                  API
+                    │
+                    ▼
+              DATA MODEL
+                    │
+                    ▼
+               SYSTEM BUS
+                    │
+          ┌─────────┼─────────┐
+          ▼         ▼         ▼
+        Node      Zone      Central
+```
+
+La API está orientada a clientes.
+
+El System Bus está orientado a comunicación interna entre componentes.
+
+---
+
+# 6. Modelo de abstracción
+
+La API utiliza la siguiente jerarquía:
+
+```text
+Site
+ │
+ ├── Zone
+ │    │
+ │    ├── Device
+ │    │     │
+ │    │     ├── Resource
+ │    │     │
+ │    │     └── Entity
+ │    │
+ │    └── Group
+ │
+ ├── Function
+ ├── Scene
+ ├── Automation
+ └── Mode
+```
+
+Las entidades constituyen la principal interfaz de control.
+
+Ejemplos:
+
+```text
+light.living
+light.kitchen
+switch.pump
+fan.bedroom
+sensor.living.temperature
+sensor.living.humidity
+binary_sensor.front_door
+cover.garage
+climate.house
+energy.house
 ```
 
 ---
 
-# 4. API Protocols
+# 7. Arquitectura de la API
 
-La plataforma utilizará principalmente:
-
-```text
-REST
-WebSocket
-```
-
-Opcionalmente podrá incorporar:
+## 7.1 Arquitectura lógica
 
 ```text
-Server-Sent Events
-MQTT
-WebRTC
-gRPC
+Client
+  │
+  ▼
+HTTP / WebSocket
+  │
+  ▼
+API Server
+  │
+  ├── Authentication
+  │
+  ├── Authorization
+  │
+  ├── Validation
+  │
+  ├── Rate Limiting
+  │
+  └── API Service
+          │
+          ▼
+      Data Model
+          │
+          ▼
+      System Bus
+          │
+    ┌─────┼─────┐
+    ▼     ▼     ▼
+ Central Zone Node
 ```
-
-según el caso de uso.
 
 ---
 
-# 5. REST API
+# 8. Base URL
 
-REST será la interfaz principal para:
-
-* configuración;
-* administración;
-* consultas;
-* comandos;
-* historial;
-* discovery;
-* usuarios;
-* integraciones.
-
-Base URL:
+La API utilizará:
 
 ```text
 /api/v1
@@ -165,537 +299,522 @@ Base URL:
 Ejemplo:
 
 ```text
-/api/v1/entities
+http://192.168.1.100/api/v1
 ```
+
+o:
+
+```text
+https://central.local/api/v1
+```
+
+La API no debe depender de un puerto específico en el diseño lógico.
+
+La implementación podrá utilizar:
+
+* `80` HTTP;
+* `443` HTTPS;
+* otro puerto configurable;
+* mDNS;
+* hostname local.
 
 ---
 
-# 6. Versionado
+# 9. Versionado
 
-La API debe versionarse explícitamente.
-
-Formato:
+La versión principal de la API estará incluida en la URL.
 
 ```text
 /api/v1
 /api/v2
 ```
 
-No se recomienda modificar de forma incompatible una versión existente.
+Los cambios compatibles no requieren incrementar la versión principal.
 
----
+### Ejemplo
 
-# 7. Compatibilidad
+Agregar un campo opcional:
 
-Cambios compatibles:
-
-* agregar campos opcionales;
-* agregar nuevos enum values cuando el cliente pueda ignorarlos;
-* agregar nuevos endpoints;
-* agregar nuevos tipos de entidades;
-* agregar nuevos capabilities.
-
-Cambios incompatibles:
-
-* eliminar campos;
-* cambiar significado;
-* cambiar tipos;
-* cambiar comportamiento;
-* eliminar endpoints.
-
-Estos cambios requieren nueva versión mayor.
-
----
-
-# 8. Content Type
-
-JSON será el formato principal:
-
-```http
-Content-Type: application/json
+```json
+{
+  "name": "Living",
+  "description": "Sala principal"
+}
 ```
 
-Para respuestas:
+es compatible.
 
-```http
-Accept: application/json
+Cambiar:
+
+```text
+entity_id
+```
+
+por:
+
+```text
+id
+```
+
+no es compatible y requiere una nueva versión.
+
+---
+
+# 10. Versiones independientes
+
+Existen varios niveles de versión:
+
+```text
+API Version
+    │
+    ├── Data Schema Version
+    │
+    ├── Firmware Version
+    │
+    └── Integration Version
+```
+
+No deben confundirse.
+
+Ejemplo:
+
+```text
+API:            v1
+Entity Schema:  1.2.0
+Firmware:       4.7.3
+Integration:    2.1.0
 ```
 
 ---
 
-# 9. Character Encoding
+# 11. Formato principal
 
-Todo JSON debe utilizar:
+El formato principal será:
+
+```text
+application/json
+```
+
+Codificación:
 
 ```text
 UTF-8
 ```
 
+El JSON será el formato principal para:
+
+* REST;
+* WebSocket;
+* configuración;
+* administración;
+* integraciones.
+
 ---
 
-# 10. Date and Time
+# 12. Formatos futuros
 
-Las fechas deberán utilizar ISO 8601 / RFC 3339.
+La arquitectura permitirá:
+
+```text
+JSON
+CBOR
+MessagePack
+Protobuf
+```
+
+Sin modificar el modelo lógico.
+
+Por ejemplo:
+
+```text
+Data Model
+    │
+    ├── JSON
+    ├── CBOR
+    └── Binary
+```
+
+Esto permitirá utilizar formatos más eficientes en:
+
+* System Bus;
+* enlaces de baja velocidad;
+* nodos con recursos limitados;
+* telemetría masiva.
+
+---
+
+# 13. Headers
+
+## 13.1 Headers generales
+
+Los clientes deberían utilizar:
+
+```http
+Content-Type: application/json
+Accept: application/json
+```
+
+---
+
+# 13.2 Request ID
+
+Cada solicitud puede incluir:
+
+```http
+X-Request-ID: req_01J...
+```
+
+El servidor debe devolverlo en la respuesta.
+
+Sirve para:
+
+* debugging;
+* logs;
+* correlación;
+* diagnóstico;
+* trazabilidad.
+
+---
+
+# 13.3 Idempotency-Key
+
+Las operaciones que puedan generar efectos físicos deben soportar:
+
+```http
+Idempotency-Key: 7f8d...
+```
 
 Ejemplo:
 
-```text
-2026-10-05T15:30:00Z
+```http
+POST /api/v1/entities/switch.pump/commands
+Idempotency-Key: cmd-client-12345
 ```
 
-Con offset:
+Esto evita que una misma solicitud sea ejecutada dos veces debido a:
 
-```text
-2026-10-05T12:30:00-03:00
-```
-
-Se recomienda almacenar internamente timestamps en UTC.
+* reintentos;
+* pérdida de conexión;
+* timeout;
+* duplicación de paquetes.
 
 ---
 
-# 11. Resource IDs
+# 13.4 Concurrencia
 
-La API utiliza IDs estables.
+Para operaciones de configuración podrá utilizarse:
+
+```http
+If-Match
+If-None-Match
+ETag
+```
+
+Esto permite detectar que la configuración cambió entre:
+
+```text
+GET
+   ↓
+modificación local
+   ↓
+PUT
+```
+
+---
+
+# 14. Estructura de respuesta
+
+Las respuestas exitosas deben ser simples y consistentes.
+
+Ejemplo:
+
+```json
+{
+  "data": {
+    "entity_id": "light.living",
+    "state": {
+      "on": true
+    }
+  },
+  "request_id": "req_01JABC"
+}
+```
+
+---
+
+# 15. Respuesta de colección
+
+```json
+{
+  "data": [
+    {
+      "entity_id": "light.living",
+      "state": {
+        "on": true
+      }
+    },
+    {
+      "entity_id": "light.kitchen",
+      "state": {
+        "on": false
+      }
+    }
+  ],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "total": 2
+  },
+  "request_id": "req_01JABC"
+}
+```
+
+---
+
+# 16. Errores
+
+Todas las APIs deben utilizar una estructura de error común.
+
+```json
+{
+  "error": {
+    "code": "ENTITY_NOT_FOUND",
+    "message": "The requested entity does not exist.",
+    "details": {},
+    "retryable": false
+  },
+  "request_id": "req_01JABC"
+}
+```
+
+---
+
+# 17. Códigos HTTP
+
+| HTTP  | Uso                                       |
+| ----- | ----------------------------------------- |
+| `200` | Operación exitosa                         |
+| `201` | Recurso creado                            |
+| `202` | Operación aceptada/asíncrona              |
+| `204` | Operación exitosa sin contenido           |
+| `400` | Solicitud inválida                        |
+| `401` | No autenticado                            |
+| `403` | Sin permisos                              |
+| `404` | Recurso inexistente                       |
+| `409` | Conflicto                                 |
+| `412` | Condición de concurrencia no cumplida     |
+| `422` | Datos semánticamente inválidos            |
+| `429` | Rate limit                                |
+| `500` | Error interno                             |
+| `502` | Error de comunicación con otro componente |
+| `503` | Servicio temporalmente no disponible      |
+| `504` | Timeout                                   |
+
+---
+
+# 18. Códigos de error
+
+Los códigos de error son estables y no deben depender del texto de `message`.
 
 Ejemplos:
 
 ```text
-site.home
-zone.living
-device.living.controller
-light.living.main
-sensor.living.temperature
+INVALID_REQUEST
+VALIDATION_ERROR
+AUTHENTICATION_REQUIRED
+AUTHORIZATION_DENIED
+
+RESOURCE_NOT_FOUND
+ENTITY_NOT_FOUND
+DEVICE_NOT_FOUND
+
+ENTITY_UNAVAILABLE
+DEVICE_OFFLINE
+NODE_UNREACHABLE
+
+COMMAND_REJECTED
+COMMAND_FAILED
+COMMAND_TIMEOUT
+COMMAND_EXPIRED
+
+CONFIGURATION_INVALID
+CONFIGURATION_CONFLICT
+
+INTEGRATION_UNAVAILABLE
+SYSTEM_BUSY
+RATE_LIMIT_EXCEEDED
 ```
 
-Los IDs no deben depender de:
+Los clientes deben utilizar `code`, no analizar `message`.
+
+---
+
+# 19. Recursos principales
+
+La API debe proporcionar como mínimo:
 
 ```text
-GPIO
-MAC
-IP
-CAN ID
-Modbus address
-MQTT topic
+/sites
+/zones
+/groups
+/nodes
+/devices
+/resources
+/capabilities
+/entities
+/functions
+/scenes
+/automations
+/modes
+/events
+/history
+/commands
+/integrations
+/discovery
+/config
+/system
+/diagnostics
+/health
 ```
 
 ---
 
-# 12. Authentication
+# 20. Sites
 
-La API debe integrarse con:
-
-```text
-API-AUTHENTICATION-AUTHORIZATION.md
-```
-
-Los mecanismos podrán incluir:
-
-```text
-Session
-Bearer Token
-API Key
-Refresh Token
-mTLS
-```
-
-según el tipo de cliente.
-
----
-
-# 13. Authorization
-
-La autorización debe realizarse antes de ejecutar acciones.
-
-Ejemplo:
-
-```text
-Request
- ↓
-Authentication
- ↓
-Authorization
- ↓
-Validation
- ↓
-Execution
-```
-
----
-
-# 14. Permission Scopes
-
-Ejemplos:
-
-```text
-system.read
-system.write
-
-sites.read
-sites.write
-
-zones.read
-zones.write
-
-devices.read
-devices.write
-
-entities.read
-entities.write
-
-entities.command
-
-states.read
-
-events.read
-
-history.read
-
-scenes.read
-scenes.execute
-scenes.write
-
-automations.read
-automations.write
-
-users.read
-users.write
-
-integrations.read
-integrations.write
-
-diagnostics.read
-diagnostics.write
-```
-
----
-
-# 15. Principle of Least Privilege
-
-Una aplicación debe recibir solamente los permisos necesarios.
-
-Ejemplo:
-
-Una pantalla de monitoreo:
-
-```text
-entities.read
-states.read
-events.read
-```
-
-Una aplicación administrativa:
-
-```text
-entities.read
-entities.write
-entities.command
-automations.write
-```
-
----
-
-# 16. Root Endpoints
-
-```text
-/api/v1
-```
-
-Debe proporcionar información básica.
-
-Ejemplo:
+## Obtener instalaciones
 
 ```http
-GET /api/v1
+GET /api/v1/sites
 ```
 
-Respuesta:
-
-```json
-{
-  "api_version": "1.0",
-  "system": "Distributed Automation Platform",
-  "status": "ok"
-}
-```
-
----
-
-# 17. System
-
-```text
-GET    /api/v1/system
-PATCH  /api/v1/system
-```
-
-Información:
-
-* nombre;
-* versión;
-* uptime;
-* estado;
-* capabilities;
-* modo;
-* hora;
-* timezone;
-* firmware;
-* storage;
-* network.
-
----
-
-# 18. System Status
+## Obtener una instalación
 
 ```http
-GET /api/v1/system/status
+GET /api/v1/sites/{site_id}
 ```
 
-Ejemplo:
-
-```json
-{
-  "status": "ok",
-  "uptime": 123456,
-  "central": {
-    "status": "online"
-  },
-  "internet": {
-    "status": "offline"
-  }
-}
-```
-
----
-
-# 19. System Health
+## Crear
 
 ```http
-GET /api/v1/system/health
+POST /api/v1/sites
 ```
 
-Ejemplo:
+## Modificar
 
-```json
-{
-  "status": "degraded",
-  "cpu": {
-    "usage": 42
-  },
-  "memory": {
-    "free": 182000
-  },
-  "storage": {
-    "status": "ok"
-  },
-  "bus": {
-    "status": "ok"
-  }
-}
+```http
+PATCH /api/v1/sites/{site_id}
 ```
 
----
+## Eliminar
 
-# 20. System Modes
-
-```text
-GET    /api/v1/system/modes
-GET    /api/v1/system/mode
-PUT    /api/v1/system/mode
-```
-
-Ejemplo:
-
-```json
-{
-  "mode": "sleep"
-}
-```
-
-Modos posibles:
-
-```text
-normal
-sleep
-away
-vacation
-maintenance
-emergency
-custom
-```
-
----
-
-# 21. Sites
-
-```text
-GET    /api/v1/sites
-POST   /api/v1/sites
-GET    /api/v1/sites/{site_id}
-PATCH  /api/v1/sites/{site_id}
+```http
 DELETE /api/v1/sites/{site_id}
 ```
 
 ---
 
-# 22. Site Example
+# 21. Zones
 
-```json
-{
-  "id": "site.home",
-  "name": "Casa",
-  "timezone": "America/Argentina/Buenos_Aires",
-  "status": "active"
-}
-```
-
----
-
-# 23. Zones
-
-```text
-GET    /api/v1/zones
-POST   /api/v1/zones
-GET    /api/v1/zones/{zone_id}
-PATCH  /api/v1/zones/{zone_id}
+```http
+GET /api/v1/zones
+GET /api/v1/zones/{zone_id}
+POST /api/v1/zones
+PATCH /api/v1/zones/{zone_id}
 DELETE /api/v1/zones/{zone_id}
 ```
 
----
-
-# 24. Zone Filtering
-
-Ejemplo:
-
-```http
-GET /api/v1/zones?site_id=site.home
-```
-
-También:
-
-```http
-GET /api/v1/zones?parent_id=zone.ground_floor
-```
-
----
-
-# 25. Groups
+Filtros:
 
 ```text
-GET    /api/v1/groups
-POST   /api/v1/groups
-GET    /api/v1/groups/{group_id}
-PATCH  /api/v1/groups/{group_id}
+?site_id=site_home
+?parent_zone_id=zone_floor1
+```
+
+---
+
+# 22. Groups
+
+```http
+GET /api/v1/groups
+GET /api/v1/groups/{group_id}
+POST /api/v1/groups
+PATCH /api/v1/groups/{group_id}
 DELETE /api/v1/groups/{group_id}
 ```
 
-Un Group puede contener:
+Un grupo puede contener:
 
-* entities;
-* devices;
-* zones;
-* functions.
+```text
+Entities
+Devices
+Functions
+```
+
+según su tipo.
 
 ---
 
-# 26. Devices
+# 23. Nodes
+
+Un Node representa una instancia física de firmware/controlador.
+
+Ejemplo:
 
 ```text
-GET    /api/v1/devices
-POST   /api/v1/devices
-GET    /api/v1/devices/{device_id}
-PATCH  /api/v1/devices/{device_id}
+node.central
+node.living
+node.garden
+node.garage
+```
+
+Endpoints:
+
+```http
+GET /api/v1/nodes
+GET /api/v1/nodes/{node_id}
+```
+
+Información:
+
+```json
+{
+  "node_id": "node.living",
+  "name": "Controlador Living",
+  "status": "online",
+  "firmware_version": "1.4.2",
+  "hardware_profile": "NODE_ETH_S3_W5500_REV_A",
+  "uptime_s": 152034,
+  "last_seen": "2026-10-06T12:00:00Z"
+}
+```
+
+---
+
+# 24. Devices
+
+```http
+GET /api/v1/devices
+GET /api/v1/devices/{device_id}
+POST /api/v1/devices
+PATCH /api/v1/devices/{device_id}
 DELETE /api/v1/devices/{device_id}
 ```
 
----
-
-# 27. Device Discovery
+Filtros:
 
 ```text
-GET /api/v1/devices/discovered
-```
-
-Devuelve dispositivos detectados pero aún no provisionados.
-
-Ejemplo:
-
-```json
-{
-  "devices": [
-    {
-      "device_id": "device.node01",
-      "status": "discovered",
-      "model": "ESP32-S3",
-      "firmware": "1.0.0"
-    }
-  ]
-}
+?node_id=node.living
+?zone_id=zone.living
+?status=online
 ```
 
 ---
 
-# 28. Device Provisioning
+# 25. Resources
 
-```text
-POST /api/v1/devices/{device_id}/provision
-```
+Los recursos representan hardware o servicios internos.
 
-Ejemplo:
-
-```json
-{
-  "name": "Controlador Living",
-  "zone_id": "zone.living",
-  "profile": "standard_node"
-}
-```
-
----
-
-# 29. Device Reconfigure
-
-```text
-POST /api/v1/devices/{device_id}/reconfigure
-```
-
-Permite solicitar reconciliación de configuración.
-
----
-
-# 30. Device Restart
-
-```text
-POST /api/v1/devices/{device_id}/restart
-```
-
-Debe requerir permisos administrativos.
-
----
-
-# 31. Device Firmware
-
-```text
-GET  /api/v1/devices/{device_id}/firmware
-POST /api/v1/devices/{device_id}/firmware/update
-```
-
-La actualización debe implementar mecanismos de seguridad y rollback definidos en la documentación de firmware/OTA.
-
----
-
-# 32. Resources
-
-```text
-GET /api/v1/resources
-GET /api/v1/resources/{resource_id}
-```
-
-Opcionalmente:
-
-```text
-GET /api/v1/devices/{device_id}/resources
-```
-
-Los Resources representan:
+Ejemplos:
 
 ```text
 GPIO
@@ -715,91 +834,86 @@ Camera
 Storage
 ```
 
+Endpoints:
+
+```http
+GET /api/v1/resources
+GET /api/v1/resources/{resource_id}
+```
+
+Los recursos podrán incluir información de hardware.
+
+Sin embargo, la API normal de automatización no debería requerirla.
+
 ---
 
-# 33. Capabilities
+# 26. Capabilities
 
-```text
+```http
 GET /api/v1/capabilities
 GET /api/v1/capabilities/{capability_id}
 ```
 
-También:
-
-```http
-GET /api/v1/entities/{entity_id}/capabilities
-```
-
----
-
-# 34. Entities
-
-Las Entities son el principal recurso de la API.
+Ejemplos:
 
 ```text
-GET    /api/v1/entities
-POST   /api/v1/entities
-GET    /api/v1/entities/{entity_id}
-PATCH  /api/v1/entities/{entity_id}
-DELETE /api/v1/entities/{entity_id}
+on_off
+brightness
+color
+temperature
+humidity
+pressure
+motion
+occupancy
+position
+speed
+power
+energy
+voltage
+current
 ```
 
 ---
 
-# 35. Entity Query
+# 27. Entities
+
+Las entidades son uno de los recursos más importantes de toda la API.
+
+```http
+GET /api/v1/entities
+GET /api/v1/entities/{entity_id}
+```
 
 Ejemplo:
 
 ```http
-GET /api/v1/entities?zone_id=zone.living
-```
-
-Por dominio:
-
-```http
-GET /api/v1/entities?domain=light
-```
-
-Por disponibilidad:
-
-```http
-GET /api/v1/entities?availability=available
+GET /api/v1/entities/light.living
 ```
 
 ---
 
-# 36. Multiple Filters
+# 28. Filtros de Entities
+
+La consulta podrá utilizar:
+
+```text
+?site_id=site_home
+?zone_id=zone_living
+?device_id=device_living
+?domain=light
+?capability=brightness
+?available=true
+```
 
 Ejemplo:
 
 ```http
-GET /api/v1/entities?site_id=site.home&zone_id=zone.living&domain=light
-```
-
-Los filtros deben combinarse mediante AND salvo que se documente lo contrario.
-
----
-
-# 37. Entity Example
-
-```json
-{
-  "id": "light.living.main",
-  "name": "Luz principal",
-  "domain": "light",
-  "zone_id": "zone.living",
-  "device_id": "device.living.controller",
-  "capabilities": [
-    "on_off",
-    "brightness"
-  ],
-  "availability": "available"
-}
+GET /api/v1/entities?zone_id=zone_living&domain=light
 ```
 
 ---
 
-# 38. Entity State
+# 29. Estado de una Entity
 
 ```http
 GET /api/v1/entities/{entity_id}/state
@@ -809,79 +923,71 @@ Ejemplo:
 
 ```json
 {
-  "entity_id": "light.living.main",
-  "state": {
-    "on": true,
-    "brightness": 80
-  },
-  "timestamp": "2026-10-05T15:30:00Z",
-  "quality": "good"
+  "data": {
+    "entity_id": "sensor.living.temperature",
+    "state": {
+      "value": 23.7,
+      "unit": "°C"
+    },
+    "quality": "good",
+    "timestamp": "2026-10-06T12:30:00Z"
+  }
 }
 ```
 
 ---
 
-# 39. Desired State
+# 30. Estado deseado y estado real
 
-Para actuadores:
-
-```http
-GET /api/v1/entities/{entity_id}/desired-state
-```
-
-Puede existir:
+Los actuadores deben poder distinguir:
 
 ```text
-desired
-actual
-```
-
-simultáneamente.
-
----
-
-# 40. State Comparison
-
-Ejemplo:
-
-```json
-{
-  "desired": {
-    "on": true
-  },
-  "actual": {
-    "on": false
-  },
-  "status": "mismatch"
-}
-```
-
----
-
-# 41. Set State
-
-Para operaciones simples:
-
-```http
-PUT /api/v1/entities/{entity_id}/state
+Desired State
+      │
+      ▼
+Command
+      │
+      ▼
+Actual State
 ```
 
 Ejemplo:
 
 ```json
 {
-  "on": true,
-  "brightness": 80
+  "state": {
+    "actual": {
+      "on": false
+    },
+    "desired": {
+      "on": true
+    }
+  }
 }
 ```
 
-Internamente esto se transforma en un Command.
+Esto es importante para sistemas distribuidos.
+
+Puede existir una diferencia temporal entre:
+
+```text
+desired = true
+actual = false
+```
+
+debido a:
+
+* latencia;
+* nodo desconectado;
+* protección;
+* actuador ocupado;
+* error físico.
 
 ---
 
-# 42. Commands
+# 31. Commands
 
-Endpoint principal:
+Los comandos se ejecutan mediante:
 
 ```http
 POST /api/v1/entities/{entity_id}/commands
@@ -891,63 +997,75 @@ Ejemplo:
 
 ```json
 {
-  "action": "turn_on"
+  "command": "turn_on",
+  "parameters": {}
 }
 ```
 
----
-
-# 43. Command with Parameters
+Para una luz:
 
 ```json
 {
-  "action": "set_brightness",
+  "command": "turn_on",
   "parameters": {
-    "brightness": 70
+    "brightness": 80
   }
 }
 ```
 
 ---
 
-# 44. Command Response
+# 32. Respuesta de comandos
 
-La API debe devolver información suficiente para seguir la operación.
+Los comandos distribuidos normalmente son asíncronos.
+
+Por ello se recomienda:
+
+```http
+202 Accepted
+```
 
 Ejemplo:
 
 ```json
 {
-  "command_id": "cmd_01JXYZ",
-  "request_id": "req_01JXYZ",
-  "status": "accepted"
+  "data": {
+    "command_id": "cmd_01JABC",
+    "request_id": "req_01JXYZ",
+    "status": "accepted",
+    "status_url": "/api/v1/commands/cmd_01JABC"
+  }
 }
 ```
 
-El cliente no debe asumir que `accepted` significa `executed`.
-
 ---
 
-# 45. Command Status
+# 33. Consulta de comando
 
 ```http
 GET /api/v1/commands/{command_id}
 ```
 
-Ejemplo:
+Respuesta:
 
 ```json
 {
-  "command_id": "cmd_01JXYZ",
-  "status": "executed",
-  "created_at": "2026-10-05T15:30:00Z",
-  "completed_at": "2026-10-05T15:30:00.250Z"
+  "data": {
+    "command_id": "cmd_01JABC",
+    "entity_id": "light.living",
+    "command": "turn_on",
+    "status": "executed",
+    "requested_at": "2026-10-06T12:30:00Z",
+    "completed_at": "2026-10-06T12:30:01Z"
+  }
 }
 ```
 
 ---
 
-# 46. Command Lifecycle
+# 34. Ciclo de vida del comando
+
+Los estados oficiales son:
 
 ```text
 requested
@@ -969,15 +1087,15 @@ Estados alternativos:
 rejected
 failed
 timeout
-expired
 cancelled
+expired
 ```
 
 ---
 
-# 47. Command Cancellation
+# 35. Cancelación
 
-Cuando sea posible:
+Los comandos que lo permitan podrán cancelarse:
 
 ```http
 POST /api/v1/commands/{command_id}/cancel
@@ -985,29 +1103,31 @@ POST /api/v1/commands/{command_id}/cancel
 
 No todos los comandos son cancelables.
 
----
-
-# 48. Idempotency
-
-Las operaciones POST críticas deben admitir:
-
-```http
-Idempotency-Key: <unique-key>
-```
-
-Ejemplo:
-
-```http
-Idempotency-Key: 8b2f...
-```
-
-Si el cliente repite la solicitud con la misma clave, no debe ejecutar dos veces una operación no idempotente.
-
----
-
-# 49. Events
+Por ejemplo:
 
 ```text
+turn_on
+```
+
+podría ser instantáneo.
+
+Mientras que:
+
+```text
+move_cover
+run_irrigation
+run_motor
+```
+
+pueden ser cancelables.
+
+---
+
+# 36. Events
+
+Los eventos son hechos ocurridos en el sistema.
+
+```http
 GET /api/v1/events
 GET /api/v1/events/{event_id}
 ```
@@ -1015,54 +1135,49 @@ GET /api/v1/events/{event_id}
 Filtros:
 
 ```text
-entity_id
-device_id
-zone_id
-event_type
-from
-to
-priority
-source
+?entity_id=light.living
+?device_id=device.living
+?event_type=entity.state_changed
+?from=...
+?to=...
 ```
 
 ---
 
-# 50. Event Example
+# 37. Diferencia entre State y Event
 
-```json
-{
-  "event_id": "evt_01JXYZ",
-  "type": "motion.detected",
-  "entity_id": "binary_sensor.hall.motion",
-  "timestamp": "2026-10-05T15:30:00Z",
-  "source": "device.hall.sensor"
-}
-```
+Un estado responde:
 
----
+> ¿Cómo está actualmente algo?
 
-# 51. Event Pagination
+Un evento responde:
+
+> ¿Qué ocurrió?
 
 Ejemplo:
 
-```http
-GET /api/v1/events?limit=100&cursor=abc123
+```text
+STATE
+light.living = ON
 ```
 
-Se recomienda cursor pagination para streams grandes.
+Evento:
+
+```text
+light.living.changed
+OFF → ON
+```
+
+El evento es histórico e inmutable.
+
+El estado representa la condición actual.
 
 ---
 
-# 52. History
+# 38. History
 
 ```http
-GET /api/v1/history
-```
-
-Ejemplo:
-
-```http
-GET /api/v1/history?entity_id=sensor.living.temperature
+GET /api/v1/entities/{entity_id}/history
 ```
 
 Parámetros:
@@ -1070,115 +1185,138 @@ Parámetros:
 ```text
 from
 to
-resolution
+limit
+offset
+interval
 aggregation
-```
-
----
-
-# 53. History Resolution
-
-Valores posibles:
-
-```text
-raw
-1m
-5m
-15m
-1h
-1d
-```
-
----
-
-# 54. History Aggregation
-
-Para valores numéricos:
-
-```text
-min
-max
-avg
-sum
-first
-last
-count
 ```
 
 Ejemplo:
 
 ```http
-GET /api/v1/history?entity_id=sensor.temperature&resolution=1h&aggregation=avg
+GET /api/v1/entities/sensor.living.temperature/history?from=2026-10-06T00:00:00Z&to=2026-10-06T12:00:00Z
 ```
 
 ---
 
-# 55. Telemetry
+# 39. Agregaciones
 
-Para datos de alta frecuencia:
-
-```http
-GET /api/v1/telemetry
-```
-
-No se debe utilizar el endpoint histórico para streaming de alta frecuencia.
-
----
-
-# 56. Functions
+Para grandes cantidades de datos:
 
 ```text
-GET    /api/v1/functions
-POST   /api/v1/functions
-GET    /api/v1/functions/{function_id}
-PATCH  /api/v1/functions/{function_id}
-DELETE /api/v1/functions/{function_id}
+raw
+average
+minimum
+maximum
+sum
+count
+delta
+first
+last
+```
+
+Ejemplo:
+
+```http
+?aggregation=average&interval=5m
+```
+
+---
+
+# 40. Telemetría
+
+Los nodos podrán enviar lotes de datos.
+
+```http
+POST /api/v1/telemetry
+```
+
+Ejemplo:
+
+```json
+{
+  "source_id": "node.weather",
+  "samples": [
+    {
+      "entity_id": "sensor.weather.temperature",
+      "timestamp": "2026-10-06T12:00:00Z",
+      "value": 22.4,
+      "unit": "°C"
+    },
+    {
+      "entity_id": "sensor.weather.humidity",
+      "timestamp": "2026-10-06T12:00:00Z",
+      "value": 61.2,
+      "unit": "%"
+    }
+  ]
+}
+```
+
+La telemetría debe admitir procesamiento por lotes para reducir:
+
+* CPU;
+* memoria;
+* tráfico;
+* consumo energético.
+
+---
+
+# 41. Functions
+
+Las Functions representan funciones lógicas.
+
+```http
+GET /api/v1/functions
+GET /api/v1/functions/{function_id}
 ```
 
 Ejemplos:
 
 ```text
-lighting
-heating
-cooling
-irrigation
-security
-ventilation
-energy
-water
+function.lighting
+function.irrigation
+function.heating
+function.security
+function.energy
 ```
 
 ---
 
-# 57. Scenes
+# 42. Scenes
 
-```text
-GET    /api/v1/scenes
-POST   /api/v1/scenes
-GET    /api/v1/scenes/{scene_id}
-PATCH  /api/v1/scenes/{scene_id}
+Una escena representa un conjunto de estados deseados.
+
+```http
+GET /api/v1/scenes
+GET /api/v1/scenes/{scene_id}
+POST /api/v1/scenes
+PATCH /api/v1/scenes/{scene_id}
 DELETE /api/v1/scenes/{scene_id}
-POST   /api/v1/scenes/{scene_id}/execute
 ```
 
----
+Activación:
 
-# 58. Scene Example
+```http
+POST /api/v1/scenes/{scene_id}/activate
+```
+
+Ejemplo:
 
 ```json
 {
-  "id": "scene.movie",
-  "name": "Modo película",
-  "actions": [
+  "entities": [
     {
-      "entity_id": "light.living.main",
-      "action": "turn_off"
+      "entity_id": "light.living",
+      "state": {
+        "on": true,
+        "brightness": 30
+      }
     },
     {
-      "entity_id": "light.living.ambient",
-      "action": "set_brightness",
-      "parameters": {
-        "brightness": 20
+      "entity_id": "light.kitchen",
+      "state": {
+        "on": false
       }
     }
   ]
@@ -1187,78 +1325,67 @@ POST   /api/v1/scenes/{scene_id}/execute
 
 ---
 
-# 59. Scene Execution
+# 43. Automations
+
+Endpoints:
 
 ```http
-POST /api/v1/scenes/scene.movie/execute
-```
-
-Respuesta:
-
-```json
-{
-  "execution_id": "exec_01JXYZ",
-  "status": "accepted"
-}
-```
-
----
-
-# 60. Automation
-
-```text
-GET    /api/v1/automations
-POST   /api/v1/automations
-GET    /api/v1/automations/{automation_id}
-PATCH  /api/v1/automations/{automation_id}
+GET /api/v1/automations
+GET /api/v1/automations/{automation_id}
+POST /api/v1/automations
+PATCH /api/v1/automations/{automation_id}
 DELETE /api/v1/automations/{automation_id}
-POST   /api/v1/automations/{automation_id}/enable
-POST   /api/v1/automations/{automation_id}/disable
+```
+
+Control:
+
+```http
+POST /api/v1/automations/{automation_id}/enable
+POST /api/v1/automations/{automation_id}/disable
+POST /api/v1/automations/{automation_id}/trigger
+POST /api/v1/automations/{automation_id}/validate
 ```
 
 ---
 
-# 61. Automation Structure
+# 44. Estructura de Automation
 
-Conceptualmente:
+Una automatización está compuesta por:
 
 ```text
-TRIGGER
+Trigger
    ↓
-CONDITIONS
+Conditions
    ↓
-ACTIONS
+Actions
 ```
 
----
-
-# 62. Automation Example
+Ejemplo:
 
 ```json
 {
-  "id": "automation.hall_light",
-  "name": "Luz del pasillo",
-
+  "automation_id": "automation.night_lighting",
   "enabled": true,
-
-  "trigger": {
-    "type": "event",
-    "event": "motion.detected",
-    "entity_id": "binary_sensor.hall.motion"
-  },
-
-  "conditions": [
+  "trigger": [
     {
-      "type": "system_mode",
-      "equals": "sleep"
+      "type": "state_change",
+      "entity_id": "binary_sensor.hall.motion"
     }
   ],
-
+  "conditions": [
+    {
+      "type": "mode",
+      "mode": "sleep"
+    }
+  ],
   "actions": [
     {
       "type": "command",
       "entity_id": "light.hall",
-      "action": "turn_on"
+      "command": "turn_on",
+      "parameters": {
+        "brightness": 15
+      }
     }
   ]
 }
@@ -1266,618 +1393,478 @@ ACTIONS
 
 ---
 
-# 63. Enable / Disable
+# 45. Modes
 
-Toda automatización debe poder activarse/desactivarse sin eliminarla.
-
-```http
-POST /api/v1/automations/{id}/enable
-POST /api/v1/automations/{id}/disable
-```
-
----
-
-# 64. Groups Command
-
-Un Group puede recibir comandos.
+Los modos globales se exponen mediante:
 
 ```http
-POST /api/v1/groups/{group_id}/commands
-```
-
-Ejemplo:
-
-```json
-{
-  "action": "turn_off"
-}
-```
-
-El sistema puede traducirlo en comandos individuales.
-
----
-
-# 65. Zone Commands
-
-También:
-
-```http
-POST /api/v1/zones/{zone_id}/commands
-```
-
-Debe existir una política clara sobre qué entidades participan.
-
----
-
-# 66. Bulk Commands
-
-Para operaciones múltiples:
-
-```http
-POST /api/v1/commands/bulk
-```
-
-Ejemplo:
-
-```json
-{
-  "commands": [
-    {
-      "entity_id": "light.living.main",
-      "action": "turn_off"
-    },
-    {
-      "entity_id": "light.kitchen.main",
-      "action": "turn_off"
-    }
-  ]
-}
-```
-
-La respuesta debe identificar individualmente cada resultado.
-
----
-
-# 67. Bulk Command Result
-
-```json
-{
-  "execution_id": "exec_123",
-  "results": [
-    {
-      "entity_id": "light.living.main",
-      "status": "executed"
-    },
-    {
-      "entity_id": "light.kitchen.main",
-      "status": "failed"
-    }
-  ]
-}
-```
-
----
-
-# 68. Atomicity
-
-Un bulk command no debe considerarse atómico por defecto.
-
-Debe existir:
-
-```text
-atomic: false
-```
-
-por defecto.
-
-Cuando una operación realmente soporte atomicidad:
-
-```text
-atomic: true
-```
-
-debe estar explícitamente soportado.
-
----
-
-# 69. Batch Operations
-
-Para grandes instalaciones:
-
-```http
-POST /api/v1/batch
-```
-
-puede permitir agrupar operaciones.
-
-Debe limitarse para evitar sobrecargar nodos pequeños.
-
----
-
-# 70. Discovery API
-
-```text
-GET /api/v1/discovery
-POST /api/v1/discovery/start
-```
-
-Puede devolver:
-
-```text
-devices
-nodes
-capabilities
-transports
-integrations
-```
-
----
-
-# 71. Network
-
-```text
-GET /api/v1/network
-GET /api/v1/network/interfaces
-GET /api/v1/network/routes
-```
-
-La información sensible debe requerir permisos administrativos.
-
----
-
-# 72. Transports
-
-```text
-GET /api/v1/transports
-GET /api/v1/transports/{transport_id}
-```
-
-Ejemplo:
-
-```json
-{
-  "id": "transport.ethernet",
-  "type": "ethernet",
-  "status": "connected",
-  "priority": 1
-}
-```
-
----
-
-# 73. System Bus API
-
-Opcionalmente:
-
-```text
-GET /api/v1/bus/status
-GET /api/v1/bus/statistics
-GET /api/v1/bus/routes
-```
-
-Nunca se debe permitir a un cliente normal publicar mensajes arbitrarios directamente en el bus.
-
----
-
-# 74. Raw Bus Access
-
-El acceso:
-
-```text
-POST /api/v1/bus/messages
-```
-
-debe estar restringido a:
-
-```text
-system administrator
-diagnostic tools
-trusted integrations
-```
-
-y preferentemente no estar habilitado en instalaciones normales.
-
-La API pública debe trabajar con objetos semánticos.
-
----
-
-# 75. Integrations
-
-```text
-GET    /api/v1/integrations
-POST   /api/v1/integrations
-GET    /api/v1/integrations/{integration_id}
-PATCH  /api/v1/integrations/{integration_id}
-DELETE /api/v1/integrations/{integration_id}
-POST   /api/v1/integrations/{integration_id}/enable
-POST   /api/v1/integrations/{integration_id}/disable
-```
-
----
-
-# 76. Integration Status
-
-```http
-GET /api/v1/integrations/{integration_id}/status
-```
-
-Ejemplo:
-
-```json
-{
-  "status": "connected",
-  "last_sync": "2026-10-05T15:29:00Z"
-}
-```
-
----
-
-# 77. Users
-
-```text
-GET    /api/v1/users
-POST   /api/v1/users
-GET    /api/v1/users/{user_id}
-PATCH  /api/v1/users/{user_id}
-DELETE /api/v1/users/{user_id}
-```
-
-El acceso debe depender de roles.
-
----
-
-# 78. Roles
-
-```http
-GET /api/v1/roles
+GET /api/v1/modes
+GET /api/v1/modes/{mode_id}
 ```
 
 Ejemplos:
 
 ```text
-owner
-administrator
-operator
-user
-viewer
-integration
-service
+normal
+sleep
+away
+vacation
+maintenance
+emergency
 ```
 
----
+El modo activo podrá consultarse mediante:
 
-# 79. API Keys
-
-```text
-GET    /api/v1/api-keys
-POST   /api/v1/api-keys
-DELETE /api/v1/api-keys/{key_id}
+```http
+GET /api/v1/system/mode
 ```
 
-La API nunca debe devolver nuevamente un secreto completo después de su creación.
+Cambiarlo:
 
----
-
-# 80. Tokens
-
-Para clientes interactivos:
-
-```text
-POST /api/v1/auth/login
-POST /api/v1/auth/refresh
-POST /api/v1/auth/logout
+```http
+POST /api/v1/system/mode
 ```
-
----
-
-# 81. Login
 
 Ejemplo:
 
 ```json
 {
-  "username": "admin",
-  "password": "********"
-}
-```
-
-Respuesta:
-
-```json
-{
-  "access_token": "...",
-  "refresh_token": "...",
-  "expires_in": 3600
-}
-```
-
-La implementación exacta dependerá de `API-AUTHENTICATION-AUTHORIZATION.md`.
-
----
-
-# 82. WebSocket
-
-Endpoint:
-
-```text
-/ws/v1
-```
-
-El WebSocket está destinado a tiempo real.
-
-Permite:
-
-```text
-state updates
-events
-command results
-availability
-diagnostics
-notifications
-```
-
----
-
-# 83. WebSocket Connection
-
-Flujo:
-
-```text
-Client
- ↓
-WebSocket Connect
- ↓
-Authenticate
- ↓
-Subscribe
- ↓
-Receive events
-```
-
----
-
-# 84. WebSocket Authentication
-
-La conexión debe autenticarse.
-
-Métodos posibles:
-
-```text
-Authorization header
-secure cookie
-short-lived WebSocket token
-```
-
-No se recomienda enviar contraseñas dentro del canal WebSocket después de establecer conexión.
-
----
-
-# 85. WebSocket Message
-
-Formato:
-
-```json
-{
-  "type": "event",
-  "message_id": "msg_01JXYZ",
-  "timestamp": "2026-10-05T15:30:00Z",
-  "payload": {}
+  "mode": "sleep"
 }
 ```
 
 ---
 
-# 86. WebSocket Subscribe
+# 46. Configuración
+
+La configuración debe separarse del estado operativo.
+
+```http
+GET /api/v1/config
+GET /api/v1/config/status
+PATCH /api/v1/config
+POST /api/v1/config/validate
+POST /api/v1/config/apply
+POST /api/v1/config/rollback
+```
+
+---
+
+# 47. Desired Configuration vs Applied Configuration
+
+El sistema debe poder diferenciar:
+
+```text
+Desired Configuration
+        │
+        ▼
+Validation
+        │
+        ▼
+Apply
+        │
+        ▼
+Applied Configuration
+```
 
 Ejemplo:
 
 ```json
 {
-  "type": "subscribe",
-  "request_id": "req_123",
-  "filters": [
-    {
-      "zone_id": "zone.living"
-    }
-  ]
+  "config_version": 15,
+  "desired_config_version": 16,
+  "applied_config_version": 15,
+  "status": "pending"
 }
 ```
 
----
-
-# 87. Subscription Response
-
-```json
-{
-  "type": "subscription_result",
-  "request_id": "req_123",
-  "subscription_id": "sub_123",
-  "status": "active"
-}
-```
+Esto es especialmente importante en sistemas distribuidos.
 
 ---
 
-# 88. WebSocket Unsubscribe
+# 48. Configuración distribuida
 
-```json
-{
-  "type": "unsubscribe",
-  "subscription_id": "sub_123"
-}
-```
-
----
-
-# 89. WebSocket State Event
-
-```json
-{
-  "type": "state_changed",
-  "entity_id": "light.living.main",
-  "state": {
-    "on": true,
-    "brightness": 80
-  },
-  "timestamp": "2026-10-05T15:30:00Z"
-}
-```
-
----
-
-# 90. WebSocket Command Result
-
-```json
-{
-  "type": "command_result",
-  "command_id": "cmd_123",
-  "status": "executed"
-}
-```
-
----
-
-# 91. WebSocket Reconnection
-
-El cliente debe poder reconectarse.
-
-Después de reconectar:
+Cuando Central modifica la configuración de un nodo:
 
 ```text
-CONNECT
- ↓
-AUTHENTICATE
- ↓
-RESUBSCRIBE
- ↓
-STATE SNAPSHOT
- ↓
-LIVE EVENTS
+Central
+  │
+  ▼
+Desired Config
+  │
+  ▼
+System Bus
+  │
+  ▼
+Node
+  │
+  ├── Validate
+  ├── Apply
+  └── Confirm
 ```
+
+El nodo debe validar localmente la configuración antes de aplicarla.
 
 ---
 
-# 92. Event Replay
+# 49. Hardware Configuration
 
-Cuando sea posible, el cliente puede indicar:
-
-```json
-{
-  "last_event_id": "evt_123"
-}
-```
-
-El servidor puede devolver eventos posteriores.
-
-Si el historial ya no está disponible:
-
-```text
-RESYNC_REQUIRED
-```
-
-y debe enviarse un snapshot.
-
----
-
-# 93. Server Events
-
-Tipos:
-
-```text
-state_changed
-event
-command_result
-device_online
-device_offline
-entity_available
-entity_unavailable
-configuration_changed
-system_mode_changed
-alarm
-notification
-```
-
----
-
-# 94. REST vs WebSocket
-
-### REST
-
-Usar para:
-
-* configuración;
-* administración;
-* consultas;
-* creación;
-* edición;
-* historial;
-* operaciones puntuales.
-
-### WebSocket
-
-Usar para:
-
-* tiempo real;
-* eventos;
-* dashboards;
-* estados;
-* notificaciones;
-* seguimiento de comandos.
-
----
-
-# 95. Pagination
-
-Los endpoints que devuelvan colecciones deben soportar paginación.
-
-Preferido:
-
-```text
-limit
-cursor
-```
+La API podrá exponer configuración de hardware mediante endpoints administrativos.
 
 Ejemplo:
 
 ```http
-GET /api/v1/entities?limit=50&cursor=abc
+GET /api/v1/nodes/{node_id}/hardware
+```
+
+Podrá mostrar:
+
+```text
+MCU
+Board
+Hardware Profile
+Resources
+Buses
+Expanders
+Sensors
+Actuators
+Displays
+Storage
+Network
+```
+
+Sin embargo, las interfaces normales de automatización no deben depender de estos datos.
+
+---
+
+# 50. Build Profile
+
+El Build Profile representa la configuración utilizada durante compilación.
+
+Ejemplo:
+
+```text
+BOARD_ESP32_WROOM
+BOARD_ESP32_S3
+BOARD_ESP32_C6
+```
+
+Puede coexistir con:
+
+```text
+ETH_LAN8720
+ETH_W5500
+CAN_NATIVE
+RS485
+DISPLAY
+CAMERA
+```
+
+El Build Profile no debe confundirse con la configuración lógica de la API.
+
+---
+
+# 51. Discovery
+
+El descubrimiento permite identificar nodos nuevos.
+
+```http
+GET /api/v1/discovery
+POST /api/v1/discovery/scan
+GET /api/v1/discovery/nodes
+```
+
+Un nodo descubierto puede proporcionar:
+
+```text
+node_id
+hardware_profile
+firmware_version
+capabilities
+resources
+network
+status
 ```
 
 ---
 
-# 96. Pagination Response
+# 52. Provisioning
+
+El proceso recomendado:
+
+```text
+Unknown Node
+     ↓
+Discovery
+     ↓
+Authentication
+     ↓
+Provisioning
+     ↓
+Configuration
+     ↓
+Validation
+     ↓
+Active
+```
+
+Endpoints:
+
+```http
+POST /api/v1/discovery/{node_id}/approve
+POST /api/v1/discovery/{node_id}/provision
+POST /api/v1/discovery/{node_id}/reject
+```
+
+---
+
+# 53. Health
+
+Endpoint general:
+
+```http
+GET /api/v1/health
+```
+
+Endpoints especializados:
+
+```http
+GET /api/v1/health/live
+GET /api/v1/health/ready
+```
+
+### Liveness
+
+Indica:
+
+> ¿El proceso está funcionando?
+
+### Readiness
+
+Indica:
+
+> ¿El sistema está preparado para aceptar operaciones?
+
+---
+
+# 54. Diagnostics
+
+```http
+GET /api/v1/diagnostics
+GET /api/v1/diagnostics/nodes/{node_id}
+GET /api/v1/diagnostics/devices/{device_id}
+```
+
+Puede incluir:
+
+```text
+uptime
+free_heap
+minimum_free_heap
+cpu_usage
+task_status
+watchdog
+temperature
+storage
+network
+bus_errors
+communication_errors
+sensor_errors
+restart_reason
+```
+
+---
+
+# 55. System
+
+```http
+GET /api/v1/system
+GET /api/v1/system/info
+GET /api/v1/system/status
+GET /api/v1/system/time
+GET /api/v1/system/mode
+```
+
+Información:
 
 ```json
 {
-  "items": [],
-  "pagination": {
-    "limit": 50,
-    "next_cursor": "def",
-    "has_more": true
+  "data": {
+    "name": "Central",
+    "firmware_version": "1.0.0",
+    "schema_version": "1.0.0",
+    "api_version": "v1",
+    "uptime_s": 123456,
+    "mode": "normal"
   }
 }
 ```
 
 ---
 
-# 97. Limit
+# 56. Integrations
 
-El servidor debe imponer un máximo.
-
-Ejemplo:
-
-```text
-default = 50
-maximum = 500
+```http
+GET /api/v1/integrations
+GET /api/v1/integrations/{integration_id}
+POST /api/v1/integrations
+PATCH /api/v1/integrations/{integration_id}
+DELETE /api/v1/integrations/{integration_id}
 ```
 
-Los valores definitivos dependerán del hardware.
+Operaciones:
+
+```http
+POST /api/v1/integrations/{integration_id}/enable
+POST /api/v1/integrations/{integration_id}/disable
+POST /api/v1/integrations/{integration_id}/test
+POST /api/v1/integrations/{integration_id}/sync
+```
 
 ---
 
-# 98. Sorting
+# 57. Integraciones soportadas
 
-Colecciones pueden soportar:
+La arquitectura deberá permitir:
+
+```text
+Matter
+MQTT
+Home Assistant
+Homey
+Apple Home
+Google Home
+Amazon Alexa
+Samsung SmartThings
+REST
+WebSocket
+```
+
+La integración no debe modificar el modelo interno.
+
+```text
+Internal Entity
+      │
+      ▼
+Integration Adapter
+      │
+      ▼
+External Platform
+```
+
+---
+
+# 58. WebSocket
+
+La API debe proporcionar comunicación en tiempo real.
+
+Endpoint:
+
+```text
+/api/v1/ws
+```
+
+El WebSocket permite recibir:
+
+```text
+state_changed
+entity_created
+entity_removed
+device_online
+device_offline
+command_status
+event
+alarm
+diagnostic
+configuration_changed
+```
+
+---
+
+# 59. Suscripciones WebSocket
+
+El cliente podrá solicitar filtros.
+
+Ejemplo:
+
+```json
+{
+  "type": "subscribe",
+  "filters": {
+    "entities": [
+      "light.living",
+      "sensor.living.temperature"
+    ]
+  }
+}
+```
+
+O:
+
+```json
+{
+  "type": "subscribe",
+  "filters": {
+    "zones": [
+      "zone.living"
+    ]
+  }
+}
+```
+
+---
+
+# 60. Mensaje WebSocket
+
+```json
+{
+  "type": "event",
+  "event_type": "entity.state_changed",
+  "timestamp": "2026-10-06T12:30:00Z",
+  "entity_id": "light.living",
+  "data": {
+    "old_state": {
+      "on": false
+    },
+    "new_state": {
+      "on": true
+    }
+  }
+}
+```
+
+---
+
+# 61. Paginación
+
+Las colecciones deben admitir:
+
+```text
+limit
+offset
+```
+
+Ejemplo:
+
+```http
+GET /api/v1/entities?limit=50&offset=100
+```
+
+En implementaciones futuras podrán agregarse:
+
+```text
+cursor
+next_cursor
+previous_cursor
+```
+
+Los cursores son preferibles para grandes volúmenes de datos.
+
+---
+
+# 62. Ordenamiento
+
+Las colecciones podrán soportar:
 
 ```text
 sort
@@ -1892,826 +1879,341 @@ GET /api/v1/events?sort=timestamp&order=desc
 
 ---
 
-# 99. Filtering
+# 63. Filtrado
 
-Los filtros deben ser explícitos.
+Los recursos deberán permitir filtros específicos.
 
-Ejemplos:
+Ejemplo:
+
+```http
+GET /api/v1/entities?domain=sensor&zone_id=zone.garden
+```
+
+Los filtros desconocidos deben generar:
 
 ```text
-zone_id
-device_id
-entity_id
-domain
-status
-availability
-created_after
-created_before
-updated_after
-updated_before
+400 INVALID_REQUEST
 ```
+
+en lugar de ser silenciosamente ignorados cuando puedan cambiar el resultado esperado.
 
 ---
 
-# 100. Search
+# 64. Búsqueda
 
-Puede existir:
+Podrá existir:
 
 ```http
 GET /api/v1/search?q=living
 ```
 
-Debe buscar sobre:
-
-* name;
-* alias;
-* entity_id;
-* tags;
-* description.
-
----
-
-# 101. ETags
-
-Los recursos configurables deben soportar ETag cuando sea posible.
-
-Respuesta:
-
-```http
-ETag: "v20"
-```
-
-Actualización:
-
-```http
-If-Match: "v20"
-```
-
-Si la versión cambió:
-
-```text
-412 Precondition Failed
-```
-
-Esto evita sobrescribir cambios realizados por otro usuario.
-
----
-
-# 102. Resource Version
-
-Los recursos pueden incluir:
-
-```json
-{
-  "version": 20
-}
-```
-
-La versión permite detectar conflictos.
-
----
-
-# 103. Optimistic Concurrency
-
-Ejemplo:
-
-```text
-User A reads version 20
-User B updates → version 21
-
-User A updates using version 20
-        ↓
-CONFLICT
-```
-
-La API debe evitar sobrescribir silenciosamente la modificación de B.
-
----
-
-# 104. PATCH
-
-Para modificaciones parciales:
-
-```http
-PATCH /api/v1/entities/{entity_id}
-```
-
-Ejemplo:
-
-```json
-{
-  "name": "Luz principal del living"
-}
-```
-
----
-
-# 105. PUT
-
-PUT debe utilizarse cuando se pretende reemplazar completamente una representación compatible.
-
-Ejemplo:
-
-```http
-PUT /api/v1/system/mode
-```
-
----
-
-# 106. DELETE
-
-DELETE debe utilizarse con cuidado.
-
-Para entidades históricas se recomienda:
-
-```text
-soft delete
-```
-
-en lugar de eliminación física inmediata.
-
----
-
-# 107. Soft Delete
-
-Ejemplo:
-
-```json
-{
-  "status": "removed"
-}
-```
-
-La información histórica puede conservar:
+La búsqueda puede incluir:
 
 ```text
 entity_id
 name
-device
-timestamps
-history
+alias
+device_id
+zone_id
+tags
 ```
-
-según las políticas de retención.
 
 ---
 
-# 108. Error Model
+# 65. Commands vs PATCH State
 
-Todas las respuestas de error deben utilizar una estructura común.
+Un cliente no debería modificar directamente el estado operativo de una entidad mediante:
+
+```http
+PATCH /entities/light.living/state
+```
+
+Para actuadores debe utilizar:
+
+```http
+POST /entities/light.living/commands
+```
+
+Esto permite:
+
+* autorización;
+* validación;
+* trazabilidad;
+* idempotencia;
+* prioridades;
+* ejecución distribuida;
+* eventos;
+* seguridad.
+
+---
+
+# 66. Operaciones inmediatas
+
+Si una operación puede ejecutarse inmediatamente, puede responder:
+
+```text
+200 OK
+```
 
 Ejemplo:
 
 ```json
 {
-  "error": {
-    "code": "ENTITY_NOT_FOUND",
-    "message": "Entity does not exist",
-    "request_id": "req_123"
+  "data": {
+    "command_id": "cmd_123",
+    "status": "executed"
   }
 }
 ```
 
 ---
 
-# 109. Error Codes
+# 67. Operaciones distribuidas
+
+Cuando el resultado depende de otro nodo:
+
+```text
+202 Accepted
+```
+
+Ejemplo:
+
+```text
+API
+ ↓
+Central
+ ↓
+Zone Controller
+ ↓
+Node
+ ↓
+Actuator
+```
+
+El cliente no debe quedarse bloqueado esperando indefinidamente.
+
+---
+
+# 68. Timeouts
+
+Los clientes y servicios deberán utilizar timeouts.
+
+Ejemplo:
+
+```text
+API request timeout
+       ↓
+Command continues
+       ↓
+Command status available
+```
+
+Un timeout HTTP no implica necesariamente que el comando haya fallado.
+
+Por eso debe consultarse:
+
+```http
+GET /api/v1/commands/{command_id}
+```
+
+---
+
+# 69. Prioridad
+
+Los comandos podrán tener:
+
+```text
+critical
+high
+normal
+low
+background
+```
+
+Prioridad recomendada:
+
+```text
+Safety
+  ↓
+Emergency
+  ↓
+Critical Automation
+  ↓
+User Command
+  ↓
+Normal Automation
+  ↓
+Telemetry
+  ↓
+Background
+```
+
+---
+
+# 70. Seguridad
+
+La seguridad de la API está definida en:
+
+```text
+API-AUTHENTICATION-AUTHORIZATION.md
+```
+
+La API deberá soportar, según implementación:
+
+```text
+Authentication
+Authorization
+Roles
+Scopes
+Tokens
+Sessions
+API Keys
+Device Credentials
+```
+
+---
+
+# 71. Principio de mínimo privilegio
+
+Una aplicación que solamente necesita leer temperatura no debería poder:
+
+```text
+controlar relays
+modificar configuración
+crear usuarios
+actualizar firmware
+```
+
+Ejemplo de scopes:
+
+```text
+entities:read
+entities:control
+devices:read
+devices:configure
+automation:read
+automation:write
+system:read
+system:admin
+```
+
+---
+
+# 72. Roles
 
 Ejemplos:
 
 ```text
-BAD_REQUEST
-UNAUTHORIZED
-FORBIDDEN
-NOT_FOUND
-CONFLICT
-VALIDATION_ERROR
-RATE_LIMITED
-
-ENTITY_NOT_FOUND
-DEVICE_NOT_FOUND
-CAPABILITY_NOT_SUPPORTED
-
-COMMAND_REJECTED
-COMMAND_FAILED
-COMMAND_TIMEOUT
-COMMAND_EXPIRED
-
-TRANSPORT_UNAVAILABLE
-NO_ROUTE
-
-CONFIGURATION_INVALID
-CONFIGURATION_FAILED
-
-INTERNAL_ERROR
-SERVICE_UNAVAILABLE
-```
-
----
-
-# 110. HTTP Status Codes
-
-Usos recomendados:
-
-```text
-200 OK
-201 Created
-202 Accepted
-204 No Content
-
-400 Bad Request
-401 Unauthorized
-403 Forbidden
-404 Not Found
-409 Conflict
-412 Precondition Failed
-422 Unprocessable Entity
-429 Too Many Requests
-
-500 Internal Server Error
-502 Bad Gateway
-503 Service Unavailable
-504 Gateway Timeout
-```
-
----
-
-# 111. Validation Errors
-
-Ejemplo:
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "fields": [
-      {
-        "field": "brightness",
-        "reason": "must be between 0 and 100"
-      }
-    ]
-  }
-}
-```
-
----
-
-# 112. Request ID
-
-Toda solicitud API debe recibir:
-
-```text
-request_id
-```
-
-Ejemplo:
-
-```http
-X-Request-ID: req_01JXYZ
-```
-
-Si el cliente proporciona uno válido, el servidor puede conservarlo.
-
----
-
-# 113. Correlation ID
-
-Para operaciones distribuidas:
-
-```http
-X-Correlation-ID: corr_01JXYZ
-```
-
-Debe propagarse hacia el System Bus.
-
----
-
-# 114. Command ID
-
-Las operaciones que generan comandos deben devolver:
-
-```text
-command_id
-```
-
-Esto permite seguir la ejecución independientemente de la conexión HTTP original.
-
----
-
-# 115. Traceability
-
-Idealmente:
-
-```text
-HTTP Request
-   │
-request_id
-   │
-   ▼
-Command
-   │
-command_id
-   │
-   ▼
-System Bus
-   │
-correlation_id
-   │
-   ▼
-Node
-   │
-   ▼
-Event / State
-```
-
----
-
-# 116. Rate Limiting
-
-La API debe implementar límites por:
-
-```text
-IP
+viewer
 user
-token
-API key
-client
+operator
+technician
+administrator
+system
+```
+
+Los roles pueden variar según instalación.
+
+---
+
+# 73. Protección de endpoints críticos
+
+Endpoints como:
+
+```text
+/config
+/system/reboot
+/system/reset
+/firmware
+/users
+/security
+/hardware
+```
+
+requieren permisos elevados.
+
+---
+
+# 74. Rate Limiting
+
+La API debe poder limitar:
+
+```text
+requests/second
+commands/minute
+login attempts
+discovery requests
+configuration changes
+```
+
+Los límites deben poder variar según:
+
+```text
+usuario
+cliente
+IP
+nodo
 endpoint
+rol
 ```
-
-según el nivel de riesgo.
 
 ---
 
-# 117. Rate Limit Response
+# 75. Caching
 
-Cuando se excede:
+Las consultas de recursos relativamente estáticos pueden utilizar:
 
 ```http
-429 Too Many Requests
+ETag
+If-None-Match
+Cache-Control
 ```
 
-Puede incluir:
-
-```http
-Retry-After: 5
-```
-
----
-
-# 118. Command Rate Limiting
-
-Debe existir una protección específica para comandos.
-
-Ejemplo:
+Especialmente:
 
 ```text
-10 commands/s/user
-100 commands/s/system
+devices
+resources
+capabilities
+hardware profiles
+integrations
 ```
 
-Los valores serán configurables según hardware.
+El estado en tiempo real no debe depender exclusivamente de cache.
 
 ---
 
-# 119. Authentication Rate Limiting
-
-Especialmente estricto para:
-
-```text
-login
-token
-password reset
-API key
-```
-
----
-
-# 120. CORS
-
-Si existe una Web UI separada:
-
-```text
-CORS
-```
-
-debe configurarse mediante lista explícita de orígenes permitidos.
-
-Nunca:
-
-```text
-Access-Control-Allow-Origin: *
-```
-
-para endpoints administrativos autenticados salvo casos específicamente controlados.
-
----
-
-# 121. CSRF
-
-Las sesiones basadas en cookies deben implementar protección CSRF.
-
-Los tokens Bearer enviados mediante headers tienen un modelo diferente y deben seguir las políticas definidas en la autenticación.
-
----
-
-# 122. TLS
-
-Para acceso remoto:
-
-```text
-HTTPS
-WSS
-```
-
-debe ser obligatorio.
-
-En instalaciones locales se puede permitir HTTP bajo una política explícita de configuración inicial, pero la plataforma debe poder funcionar completamente con HTTPS.
-
----
-
-# 123. Local Access
-
-La API local puede estar disponible mediante:
-
-```text
-http://device.local
-```
-
-o:
-
-```text
-https://device.local
-```
-
-según el método de instalación y certificados.
-
-El nombre concreto dependerá del hostname/mDNS configurado.
-
----
-
-# 124. Remote Access
-
-No se recomienda exponer directamente la API administrativa a Internet.
-
-Preferentemente:
-
-```text
-Internet
-   ↓
-VPN / secure gateway / authenticated service
-   ↓
-Central
-```
-
----
-
-# 125. API Gateway
-
-Central puede actuar como API Gateway.
-
-```text
-External Client
-      ↓
-Central API
-      ↓
-System Bus
-      ↓
-Node
-```
-
-Esto permite ocultar la topología interna.
-
----
-
-# 126. Direct Node API
-
-Los nodos también pueden ofrecer API local.
-
-```text
-Client
-  ↓
-Node API
-  ↓
-Local Entity
-```
-
-Debe ser opcional.
-
----
-
-# 127. Central API vs Node API
-
-### Central
-
-Proporciona:
-
-* sistema completo;
-* múltiples zonas;
-* usuarios;
-* integraciones;
-* historial;
-* automatizaciones globales.
-
-### Node
-
-Proporciona:
-
-* entidades locales;
-* configuración local;
-* diagnóstico;
-* control local;
-* fallback.
-
-Ambas deben utilizar el mismo Data Model.
-
----
-
-# 128. API Discovery
-
-La API puede proporcionar:
-
-```http
-GET /api/v1/capabilities
-```
-
-para que clientes conozcan:
-
-```text
-supported domains
-supported commands
-supported features
-api version
-```
-
----
-
-# 129. Feature Flags
-
-La respuesta puede incluir:
-
-```json
-{
-  "features": {
-    "websocket": true,
-    "history": true,
-    "scenes": true,
-    "automations": true,
-    "matter": false,
-    "camera": true
-  }
-}
-```
-
-Esto permite que la UI se adapte al dispositivo.
-
----
-
-# 130. Capability Discovery
-
-Un cliente nunca debe asumir que todos los dispositivos soportan:
-
-```text
-brightness
-color
-position
-speed
-```
-
-Debe consultar:
-
-```text
-entity.capabilities
-```
-
----
-
-# 131. Domain Discovery
-
-La plataforma puede informar:
-
-```http
-GET /api/v1/domains
-```
-
-Ejemplo:
-
-```json
-{
-  "domains": [
-    "light",
-    "switch",
-    "fan",
-    "sensor",
-    "binary_sensor",
-    "cover",
-    "climate"
-  ]
-}
-```
-
----
-
-# 132. Units
-
-Los valores deben incluir unidad cuando sea necesario.
-
-Ejemplo:
-
-```json
-{
-  "value": 23.4,
-  "unit": "°C"
-}
-```
-
-La API debe utilizar las unidades canónicas definidas en `DATA-MODEL.md`.
-
----
-
-# 133. Localization
-
-Los IDs no deben depender del idioma.
-
-Ejemplo:
-
-```text
-entity_id:
-light.living.main
-```
-
-El nombre puede cambiar:
-
-```text
-Español:
-"Luz principal"
-
-English:
-"Main light"
-```
-
----
-
-# 134. Friendly Names
+# 76. Consistencia distribuida
 
 La API debe diferenciar:
 
 ```text
-id
-name
-aliases
+Local State
+Central State
+Desired State
+Actual State
+Last Known State
 ```
+
+Nunca debe presentarse un estado antiguo como si fuera necesariamente actual.
 
 Ejemplo:
 
 ```json
 {
-  "id": "light.living.main",
-  "name": "Luz principal",
-  "aliases": [
-    "Luz living",
-    "Luz del salón"
-  ]
-}
-```
-
----
-
-# 135. Tags
-
-Las entidades pueden incluir:
-
-```json
-{
-  "tags": [
-    "lighting",
-    "main",
-    "downstairs"
-  ]
-}
-```
-
-Esto permite búsquedas y agrupaciones.
-
----
-
-# 136. Visibility
-
-Una Entity puede indicar:
-
-```text
-visible
-hidden
-internal
-```
-
-Las Entities internas no deberían exponerse automáticamente a integraciones externas.
-
----
-
-# 137. External Exposure
-
-Una Entity puede tener:
-
-```json
-{
-  "exposure": {
-    "home_assistant": true,
-    "matter": true,
-    "public_api": false
+  "state": {
+    "value": true,
+    "quality": "stale",
+    "timestamp": "2026-10-06T11:20:00Z"
   }
 }
 ```
 
 ---
 
-# 138. Virtual Entities
+# 77. Calidad del dato
 
-La API debe soportar entidades sin hardware directo.
-
-Ejemplo:
-
-```text
-sensor.house.average_temperature
-```
-
-Puede calcularse a partir de:
-
-```text
-sensor.living.temperature
-sensor.bedroom.temperature
-sensor.kitchen.temperature
-```
-
----
-
-# 139. Aggregated Entities
-
-Ejemplo:
-
-```text
-energy.house.total
-```
-
-puede agregar:
-
-```text
-energy.kitchen
-energy.living
-energy.garage
-```
-
-La API debe tratarlas como Entities normales.
-
----
-
-# 140. External Entities
-
-Una integración puede registrar:
-
-```text
-sensor.weather.outdoor_temperature
-```
-
-aunque el sensor físico esté fuera del sistema.
-
-Debe marcarse:
-
-```text
-source: external
-```
-
----
-
-# 141. Source
-
-Estados y eventos pueden incluir:
-
-```json
-{
-  "source": {
-    "type": "device",
-    "id": "device.living.sensor"
-  }
-}
-```
-
-Otros tipos:
-
-```text
-device
-central
-automation
-user
-integration
-system
-external
-```
-
----
-
-# 142. Quality
-
-Los estados deben soportar:
+Los estados podrán utilizar:
 
 ```text
 good
@@ -2721,1386 +2223,458 @@ invalid
 unavailable
 ```
 
-Ejemplo:
+Esto es especialmente importante para:
 
-```json
-{
-  "value": 24.2,
-  "unit": "°C",
-  "quality": "good"
-}
-```
+* sensores;
+* nodos desconectados;
+* datos históricos;
+* integraciones;
+* automatizaciones.
 
 ---
 
-# 143. Availability
+# 78. Timestamp
 
-Una Entity puede estar:
-
-```text
-available
-unavailable
-unknown
-degraded
-disabled
-```
-
-No debe confundirse:
-
-```text
-unknown
-```
-
-con:
-
-```text
-unavailable
-```
-
----
-
-# 144. State vs Event
-
-La API debe mantener la diferencia:
-
-```text
-State
-=
-"cómo está ahora"
-
-Event
-=
-"qué ocurrió"
-```
+Los timestamps deben utilizar ISO 8601 / RFC 3339.
 
 Ejemplo:
 
 ```text
-State:
-door = open
+2026-10-06T12:30:00Z
+```
 
-Event:
-door.opened
+Internamente, los dispositivos pueden utilizar:
+
+```text
+Unix timestamp
+monotonic timer
+RTC
+```
+
+pero la API debe proporcionar un formato uniforme.
+
+---
+
+# 79. Tiempo sin sincronización
+
+Un nodo que todavía no tenga NTP/RTC válido no debe inventar una fecha.
+
+Debe indicar:
+
+```text
+time_valid = false
+```
+
+o una calidad apropiada.
+
+El sistema debe poder diferenciar:
+
+```text
+timestamp válido
+timestamp aproximado
+timestamp desconocido
 ```
 
 ---
 
-# 145. Alarm API
+# 80. Unidades
 
-Para sistemas de seguridad:
+Las unidades deben ser explícitas.
+
+Ejemplos:
 
 ```text
-GET  /api/v1/alarms
-GET  /api/v1/alarms/{alarm_id}
-POST /api/v1/alarms/{alarm_id}/arm
-POST /api/v1/alarms/{alarm_id}/disarm
-POST /api/v1/alarms/{alarm_id}/acknowledge
+Temperature → °C
+Pressure → Pa
+Voltage → V
+Current → A
+Power → W
+Energy → Wh
+Frequency → Hz
+Speed → m/s
+Flow → L/min
 ```
 
-Las acciones deben requerir permisos adecuados.
+Las integraciones pueden convertir las unidades según sus necesidades.
 
 ---
 
-# 146. Notification API
+# 81. Identificadores
 
-Opcionalmente:
+Los identificadores lógicos deben ser estables.
+
+Ejemplo:
 
 ```text
-GET /api/v1/notifications
-POST /api/v1/notifications/{id}/acknowledge
+light.living
+sensor.living.temperature
+switch.irrigation
 ```
 
-Puede representar:
-
-* alertas;
-* avisos;
-* mantenimiento;
-* errores;
-* eventos importantes.
-
----
-
-# 147. Diagnostics
+El cambio de:
 
 ```text
-GET /api/v1/diagnostics
-GET /api/v1/devices/{device_id}/diagnostics
+GPIO12
 ```
 
-Puede incluir:
+a:
 
 ```text
-CPU
-RAM
-flash
-network
-bus
-tasks
-sensors
-errors
-uptime
-watchdog
+GPIO27
+```
+
+no debería cambiar:
+
+```text
+switch.irrigation
 ```
 
 ---
 
-# 148. Logs
+# 82. IDs internos
 
-```http
-GET /api/v1/logs
-```
-
-Filtros:
+Los objetos también pueden tener IDs internos:
 
 ```text
-level
-module
-device
-from
-to
-```
-
-El acceso debe estar restringido.
-
----
-
-# 149. Audit Log
-
-Las acciones administrativas importantes deben registrar:
-
-```text
-user
-action
-resource
-timestamp
-result
-source
-request_id
+UUID
+ULID
 ```
 
 Ejemplo:
 
 ```json
 {
-  "user_id": "user.admin",
-  "action": "entity.command",
-  "entity_id": "lock.front_door",
-  "result": "success"
+  "id": "01K...",
+  "entity_id": "light.living"
 }
 ```
 
----
-
-# 150. API Export
-
-La configuración puede exportarse:
-
-```http
-GET /api/v1/export
-```
-
-Debe poder incluir:
+El:
 
 ```text
-sites
-zones
-groups
-devices
-entities
-automations
-scenes
-integrations
-configuration
+id
 ```
 
-Los secretos deben excluirse o cifrarse.
+identifica internamente el objeto.
+
+El:
+
+```text
+entity_id
+```
+
+representa su identidad lógica.
 
 ---
 
-# 151. API Import
+# 83. Compatibilidad con hardware
 
-```http
-POST /api/v1/import
-```
-
-Debe validar:
+La API no debe depender de:
 
 ```text
-schema version
-compatibility
-IDs
-hardware capabilities
-dependencies
+ESP32
+ESP32-S3
+ESP32-C6
+W5500
+LAN8720
+MCP23017
+74HC595
+RS485
+CAN
 ```
 
-antes de aplicar cambios.
-
----
-
-# 152. Dry Run
-
-Se recomienda soportar:
-
-```http
-POST /api/v1/import?dry_run=true
-```
-
-para detectar:
-
-* incompatibilidades;
-* entidades faltantes;
-* capabilities inexistentes;
-* conflictos.
-
-Sin modificar el sistema.
-
----
-
-# 153. Configuration Transactions
-
-Cambios múltiples de configuración pueden utilizar:
+Esos datos pertenecen al nivel:
 
 ```text
-prepare
-validate
-apply
-verify
-```
-
-Ejemplo:
-
-```text
-POST /api/v1/configuration/validate
-POST /api/v1/configuration/apply
-```
-
----
-
-# 154. Configuration Version
-
-Toda configuración importante debe tener:
-
-```text
-config_version
-```
-
-Ejemplo:
-
-```json
-{
-  "config_version": 42
-}
-```
-
----
-
-# 155. Configuration Status
-
-```http
-GET /api/v1/configuration/status
-```
-
-Ejemplo:
-
-```json
-{
-  "desired_version": 42,
-  "applied_version": 41,
-  "status": "pending"
-}
-```
-
----
-
-# 156. API and System Bus
-
-Una operación típica:
-
-```text
-HTTP POST
-     ↓
-API Validation
-     ↓
-Authorization
-     ↓
-Command creation
-     ↓
-System Bus
-     ↓
-Routing
-     ↓
-Node
-     ↓
-Entity
-     ↓
-Command Result
-     ↓
-API
-```
-
----
-
-# 157. API Does Not Bypass Bus
-
-La API no debe hacer:
-
-```text
-HTTP
- ↓
-GPIO
-```
-
-Debe hacer:
-
-```text
-HTTP
- ↓
-API
- ↓
-Command
- ↓
-System Bus
- ↓
-Entity
- ↓
-Resource
-```
-
----
-
-# 158. Local Command Optimization
-
-Una implementación puede optimizar:
-
-```text
-API
- ↓
-Local Entity
-```
-
-pero semánticamente debe mantener el mismo modelo de Command.
-
-La optimización no debe cambiar el contrato.
-
----
-
-# 159. API Caching
-
-Los recursos estáticos/configurables pueden usar:
-
-```text
-ETag
-Cache-Control
-Last-Modified
-```
-
-Los estados dinámicos deben utilizar políticas de cache apropiadas.
-
-No se debe cachear de manera incorrecta:
-
-```text
-live state
-security state
-command result
-```
-
----
-
-# 160. State Freshness
-
-La API debe poder informar:
-
-```json
-{
-  "value": 23.4,
-  "timestamp": "2026-10-05T15:30:00Z",
-  "age_ms": 1200,
-  "quality": "good"
-}
-```
-
-Esto permite que el cliente determine si el dato está actualizado.
-
----
-
-# 161. Security-Sensitive Entities
-
-Entidades como:
-
-```text
-lock
-alarm
-garage door
-security system
-```
-
-requieren políticas especiales.
-
-No deben exponerse automáticamente a clientes con permisos genéricos de lectura/escritura.
-
----
-
-# 162. Safety Limits
-
-La API debe validar límites.
-
-Ejemplo:
-
-```json
-{
-  "action": "set_temperature",
-  "parameters": {
-    "value": 100
-  }
-}
-```
-
-Si la capability sólo permite:
-
-```text
-0–50 °C
-```
-
-debe responder:
-
-```text
-VALIDATION_ERROR
-```
-
-antes de enviar al dispositivo.
-
----
-
-# 163. Device-Level Validation
-
-La validación también debe realizarse en el Node.
-
-Por lo tanto:
-
-```text
-API validation
-+
-Node validation
-```
-
-Ambas son necesarias.
-
-Nunca debe asumirse que una solicitud validada por Central es segura para el hardware.
-
----
-
-# 164. Defense in Depth
-
-Validación:
-
-```text
-Client
- ↓
-API
- ↓
-System Bus
- ↓
-Node
- ↓
 Hardware
+Resource
+Device
 ```
 
-Cada capa puede rechazar una operación inválida.
+No al nivel de automatización.
 
 ---
 
-# 165. API for Mobile Apps
+# 84. Ejemplo de abstracción
 
-La API debe ser adecuada para:
+Un usuario solicita:
+
+```http
+POST /api/v1/entities/switch.pump/commands
+```
+
+El sistema puede ejecutar:
 
 ```text
-Android
-iOS
-Flutter
-React Native
-Native apps
+Entity
+   ↓
+Capability
+   ↓
+Device
+   ↓
+Resource
+   ↓
+MCP23017
+   ↓
+I²C
+   ↓
+GPIO lógico
+   ↓
+Relay
 ```
 
-No debe depender de HTML.
-
----
-
-# 166. Mobile Synchronization
-
-Una app móvil debe poder:
+Otro equipo podría ejecutar exactamente el mismo comando mediante:
 
 ```text
-login
- ↓
-fetch snapshot
- ↓
-open WebSocket
- ↓
-subscribe
- ↓
-receive state updates
+ESP32 GPIO
+74HC595
+CAN
+RS485
+Modbus
+Ethernet
 ```
+
+La API no cambia.
 
 ---
 
-# 167. Offline Mobile
+# 85. API del Node
 
-La app puede mantener:
+Un nodo puede proporcionar una API local.
+
+Ejemplo:
 
 ```text
-cached configuration
-cached states
-pending actions
+Node
+ └── /api/v1
 ```
 
-pero nunca debe asumir que un comando offline fue ejecutado hasta recibir confirmación.
+Puede funcionar sin Central.
 
----
-
-# 168. Third-Party API
-
-Una aplicación externa debería poder hacer:
+Debe permitir al menos:
 
 ```text
 GET entities
 GET state
-POST command
-GET history
-SUBSCRIBE events
-```
-
-sin conocer la arquitectura interna.
-
----
-
-# 169. Example Third-Party Flow
-
-```text
-External App
-     │
-     │ GET /entities
-     ▼
-API
-     │
-     ▼
-Entity Model
-     │
-     ▼
-Response
-```
-
-Luego:
-
-```text
-External App
-     │
-     │ POST /entities/light.../commands
-     ▼
-API
-     │
-     ▼
-System Bus
-     │
-     ▼
-Node
+POST commands
+GET diagnostics
+GET configuration status
 ```
 
 ---
 
-# 170. Web UI Architecture
+# 86. API del Central
 
-La Web UI debe utilizar la misma API pública.
-
-```text
-Web UI
-   ↓
-REST
-   ↓
-WebSocket
-   ↓
-API
-```
-
-No debe existir una API especial que solamente la Web UI conozca.
-
----
-
-# 171. Zero-Code Principle
-
-El usuario debe poder configurar:
+Central proporciona una vista agregada.
 
 ```text
-devices
-entities
-zones
-groups
-automations
-scenes
-integrations
+Central
+ │
+ ├── Node A
+ ├── Node B
+ ├── Node C
+ └── Node D
 ```
 
-desde la UI.
-
-La API debe proporcionar todas las operaciones necesarias para hacerlo.
-
----
-
-# 172. API Extensibility
-
-Nuevos módulos pueden registrar:
-
-```text
-new domain
-new capabilities
-new commands
-new event types
-```
-
-sin romper la API existente.
-
----
-
-# 173. Vendor Extensions
-
-Los módulos pueden utilizar:
-
-```text
-x-vendor-*
-```
-
-para extensiones específicas.
-
-Ejemplo:
-
-```json
-{
-  "x-vendor-feature": {
-    "value": true
-  }
-}
-```
-
-Las extensiones no deben reemplazar campos estándar cuando éstos existen.
-
----
-
-# 174. Unknown Fields
-
-Los clientes deben ignorar campos desconocidos que no necesiten interpretar.
-
-Esto facilita evolución futura.
-
----
-
-# 175. Unknown Enum Values
-
-Los clientes robustos deben tratar un enum desconocido como:
-
-```text
-unknown
-```
-
-y no romper toda la aplicación.
-
----
-
-# 176. API Documentation
-
-La API deberá documentarse posteriormente mediante:
-
-```text
-OpenAPI
-```
-
-preferentemente OpenAPI 3.x.
-
-La especificación OpenAPI debe generarse a partir de:
-
-```text
-DATA-SCHEMAS.md
-+
-API-SPECIFICATION.md
-```
-
-y no definir modelos contradictorios.
-
----
-
-# 177. OpenAPI
-
-Se deberá crear posteriormente:
-
-```text
-openapi.yaml
-```
-
-con:
-
-```text
-paths
-schemas
-responses
-securitySchemes
-parameters
-examples
-```
-
----
-
-# 178. API Testing
-
-Cada endpoint debe disponer de pruebas:
-
-```text
-authentication
-authorization
-validation
-success
-failure
-timeout
-offline
-concurrency
-rate limit
-```
-
----
-
-# 179. Contract Testing
-
-Debe comprobarse que:
-
-```text
-API
-↔
-Data Schemas
-```
-
-permanezcan compatibles.
-
-Además:
-
-```text
-API
-↔
-System Bus
-```
-
-debe mantener el contrato.
-
----
-
-# 180. Integration Testing
-
-Ejemplo:
-
-```text
-REST
- ↓
-Command
- ↓
-System Bus
- ↓
-Node
- ↓
-Entity
- ↓
-State
- ↓
-WebSocket
-```
-
-Debe poder probarse extremo a extremo.
-
----
-
-# 181. Failure Testing
-
-Debe probarse:
-
-```text
-Node offline
-Central offline
-Internet offline
-Transport failure
-Timeout
-Queue full
-Invalid command
-Unauthorized command
-Configuration mismatch
-Duplicate command
-```
-
----
-
-# 182. Security Testing
-
-Debe incluir:
-
-```text
-authentication
-authorization
-token expiration
-replay
-CSRF
-CORS
-rate limiting
-input validation
-injection
-privilege escalation
-```
-
----
-
-# 183. API Performance
-
-La API debe estar diseñada para dispositivos con recursos limitados.
-
-Debe evitar:
-
-* respuestas gigantes;
-* consultas innecesarias;
-* serialización repetida;
-* grandes cantidades de memoria;
-* polling agresivo.
-
----
-
-# 184. Prefer WebSocket for Live Data
-
-No se recomienda:
-
-```text
-GET /state
-cada 100 ms
-```
-
-para dashboards.
-
-Preferentemente:
-
-```text
-WebSocket
-   ↓
-state_changed
-```
-
----
-
-# 185. Polling
-
-Polling puede utilizarse cuando:
-
-* WebSocket no está disponible;
-* cliente muy simple;
-* información de baja frecuencia;
-* recuperación.
-
-Debe utilizar intervalos razonables.
-
----
-
-# 186. Embedded API
-
-En ESP32, la API puede implementar solamente los endpoints compatibles con el hardware.
-
-Por ejemplo:
-
-```text
-ESP32-C3 Node
-
-✓ system
-✓ devices
-✓ entities
-✓ states
-✓ commands
-✓ diagnostics
-
-✗ global history
-✗ multi-user administration
-✗ complex integrations
-```
-
-Esto debe descubrirse mediante capabilities.
-
----
-
-# 187. Central API
-
-El Central puede implementar:
-
-```text
-sites
-zones
-groups
-devices
-entities
-states
-commands
-events
-history
-automations
-scenes
-integrations
-users
-roles
-audit
-diagnostics
-```
-
----
-
-# 188. API Capability Profile
-
-Cada servidor API puede anunciar:
-
-```json
-{
-  "profile": "central",
-  "features": [
-    "multi_zone",
-    "automation",
-    "history",
-    "websocket",
-    "integrations"
-  ]
-}
-```
-
-Un Node:
-
-```json
-{
-  "profile": "node",
-  "features": [
-    "local_entities",
-    "commands",
-    "state",
-    "diagnostics"
-  ]
-}
-```
-
----
-
-# 189. API Profiles
-
-Perfiles iniciales:
-
-```text
-node
-zone_controller
-central
-gateway
-integration
-```
-
-No deben convertirse en tipos rígidos de hardware.
-
-Son perfiles de capacidad.
-
----
-
-# 190. Multi-Central Future
-
-La API debe poder evolucionar hacia:
-
-```text
-Central A
-Central B
-```
-
-sin cambiar el modelo de Entity.
-
-Las futuras versiones podrán incorporar:
-
-```text
-federation
-replication
-leader election
-failover
-```
-
----
-
-# 191. API Availability
-
-La API debe indicar si una operación depende del Central.
-
-Ejemplo:
-
-```json
-{
-  "operation": "global_history",
-  "availability": "central_required"
-}
-```
-
-Mientras:
-
-```json
-{
-  "operation": "local_light_command",
-  "availability": "local"
-}
-```
-
----
-
-# 192. Local vs Global Operations
-
-### Local
-
-```text
-entity command
-local state
-local diagnostics
-local configuration
-```
-
-### Global
-
-```text
-site configuration
-cross-zone automation
-global history
-external integrations
-multi-site
-```
-
----
-
-# 193. Central Failure Behavior
-
-Cuando Central no esté disponible:
-
-```text
-GET local entity
-```
-
-puede seguir funcionando en el Node.
-
-Pero:
-
-```text
-GET global history
-```
-
-puede responder:
-
-```text
-503 SERVICE_UNAVAILABLE
-```
-
-con:
-
-```text
-dependency: central
-```
-
----
-
-# 194. API Error Dependency
-
-Ejemplo:
-
-```json
-{
-  "error": {
-    "code": "DEPENDENCY_UNAVAILABLE",
-    "dependency": "central",
-    "request_id": "req_123"
-  }
-}
-```
-
----
-
-# 195. API Reliability Principle
-
-> **Una API debe reflejar la realidad del sistema distribuido, no ocultar sus fallos.**
-
-No debe devolver:
-
-```text
-200 OK
-```
-
-cuando el comando simplemente quedó perdido.
-
----
-
-# 196. Accepted vs Executed
-
-Ejemplo:
-
-```text
-202 Accepted
-```
-
-significa:
-
-> La solicitud fue aceptada para procesamiento.
-
-No significa:
-
-> El dispositivo ejecutó correctamente la acción.
-
-Para esto se utiliza:
-
-```text
-command_id
-```
-
-y posteriormente:
-
-```text
-command_result
-```
-
----
-
-# 197. Synchronous Commands
-
-Para comandos extremadamente rápidos y locales se puede devolver:
-
-```text
-200 OK
-```
-
-si la ejecución realmente terminó.
-
-Pero no debe asumirse para operaciones distribuidas.
-
----
-
-# 198. Asynchronous Commands
-
-Preferidos para:
-
-```text
-remote device
-firmware update
-scene
-automation
-long-running action
-```
-
-Respuesta:
-
-```text
-202 Accepted
-```
-
----
-
-# 199. Long-Running Operations
-
-Pueden utilizar:
+La API de Central puede devolver:
 
 ```http
-GET /api/v1/operations/{operation_id}
+GET /api/v1/entities
 ```
+
+con entidades provenientes de múltiples nodos.
+
+---
+
+# 87. Agregación
 
 Ejemplo:
 
-```json
-{
-  "operation_id": "op_123",
-  "status": "running",
-  "progress": 65
-}
+```http
+GET /api/v1/entities?zone_id=house
+```
+
+Central puede reunir:
+
+```text
+Node Living
+Node Kitchen
+Node Garage
+Node Garden
+```
+
+y devolver una colección unificada.
+
+El cliente no necesita consultar cada nodo.
+
+---
+
+# 88. Falla del Central
+
+Si Central falla:
+
+```text
+Central X
+   │
+   ├── Zone A ✓
+   ├── Zone B ✓
+   └── Nodes ✓
+```
+
+Los nodos deben continuar con las funciones que puedan ejecutar localmente.
+
+Cuando Central vuelva:
+
+```text
+Central
+   ↓
+Discovery
+   ↓
+State Synchronization
+   ↓
+Configuration Reconciliation
+   ↓
+Normal Operation
 ```
 
 ---
 
-# 200. API Design Rule
+# 89. Reconciliación
 
-La API debe utilizar recursos semánticos:
+Cuando se reconecta un nodo:
 
 ```text
-Entity
+Central Desired Configuration
+              │
+              ▼
+        Node Configuration
+              │
+              ▼
+          Compare
+          /     \
+       Equal   Different
+         │        │
+         │        ▼
+         │      Apply
+         │        │
+         └────────┘
+              │
+              ▼
+          Confirm
+```
+
+La API podrá mostrar:
+
+```text
+synchronized
+pending
+conflict
+error
+```
+
+---
+
+# 90. API y System Bus
+
+Un comando recibido por API puede convertirse internamente en un mensaje del System Bus.
+
+```text
+HTTP
+ ↓
+API
+ ↓
 Command
+ ↓
+System Bus
+ ↓
+Node
+```
+
+Una actualización de estado puede recorrer el camino inverso:
+
+```text
+Node
+ ↓
 Event
-State
-Scene
-Automation
-```
-
-y evitar endpoints diseñados alrededor del hardware:
-
-```text
-/gpio
-/modbus-register
-/can-frame
-/pwm-channel
-```
-
-Estos pueden existir solamente dentro de APIs administrativas/diagnósticas especializadas.
-
----
-
-# 201. Hardware Diagnostic API
-
-En modo experto puede existir:
-
-```text
-GET /api/v1/devices/{device_id}/hardware
-GET /api/v1/devices/{device_id}/resources
-```
-
-Pero no debe ser la API utilizada por automatizaciones normales.
-
----
-
-# 202. API Security Boundary
-
-La API representa una frontera de seguridad:
-
-```text
-External Client
-      │
-      ▼
-┌───────────────┐
-│ API Security  │
-└───────┬───────┘
-        ▼
-System
-```
-
-Nunca debe suponerse que un cliente autenticado tiene acceso completo.
-
----
-
-# 203. Auditability
-
-Las siguientes acciones deben poder auditarse:
-
-```text
-login
-logout
-configuration change
-user change
-permission change
-command
-scene execution
-automation change
-integration change
-firmware update
-security action
+ ↓
+System Bus
+ ↓
+Data Model
+ ↓
+API
+ ↓
+WebSocket
 ```
 
 ---
 
-# 204. Privacy
+# 91. API y MQTT
 
-La API debe minimizar exposición de:
+MQTT es un transporte/integración.
 
-* credenciales;
-* tokens;
-* claves;
-* información innecesaria;
-* datos personales;
-* cámaras;
-* historial sensible.
-
----
-
-# 205. Camera API
-
-Las cámaras deben utilizar recursos específicos.
+No debe convertirse en el modelo principal.
 
 Ejemplo:
 
 ```text
-GET /api/v1/entities/camera.front
+Entity
+  ↓
+Internal Event
+  ↓
+MQTT Adapter
+  ↓
+MQTT Topic
 ```
 
-Para streaming se recomienda separar:
+La misma entidad puede exponerse mediante:
 
 ```text
-control API
+REST
+WebSocket
+MQTT
+Matter
 ```
 
-de:
-
-```text
-media transport
-```
-
-La API no debería transportar vídeo completo mediante JSON.
+sin crear cuatro modelos diferentes.
 
 ---
 
-# 206. AI API
+# 92. API y Matter
 
-Entidades de IA pueden exponer:
+Matter debe utilizar el modelo interno como fuente de verdad.
 
 ```text
-prediction
-classification
-confidence
-model
-timestamp
+Entity
+ ↓
+Capability
+ ↓
+Matter Adapter
+ ↓
+Matter Device
 ```
 
-Ejemplo:
+No:
 
-```json
-{
-  "entity_id": "camera.kitchen.ai",
-  "prediction": "person",
-  "confidence": 0.94
-}
+```text
+Matter → modelo interno → hardware
 ```
+
+como modelo principal.
 
 ---
 
-# 207. Energy API
+# 93. API y Home Assistant
 
-Puede consultar:
-
-```text
-power
-current
-voltage
-energy
-```
-
-Ejemplo:
-
-```http
-GET /api/v1/entities/energy.house/history
-```
-
----
-
-# 208. Water API
-
-Puede soportar:
+Home Assistant puede conectarse mediante:
 
 ```text
-flow
-volume
-pressure
-leak
+Matter
+MQTT
+REST
+WebSocket
 ```
 
-sin cambiar el modelo general.
-
----
-
-# 209. Industrial API
-
-Para equipos industriales:
-
-```text
-PLC
-Modbus
-CANopen
-RS485
-```
-
-la API continúa trabajando con:
+La integración deberá mapear:
 
 ```text
 Entity
@@ -4110,662 +2684,1939 @@ Command
 Event
 ```
 
+al modelo de Home Assistant.
+
 ---
 
-# 210. Agriculture API
+# 94. API para aplicaciones móviles
+
+La misma API deberá poder ser utilizada posteriormente por:
+
+```text
+Android
+iOS
+Web
+Desktop
+```
+
+Por ello no se debe diseñar una API exclusivamente para la interfaz web.
 
 Ejemplo:
 
 ```text
-soil.moisture
-irrigation.valve
-weather.temperature
-greenhouse.humidity
+Web UI ─────┐
+Mobile ─────┤
+Third Party ┤
+            ▼
+         API v1
+            │
+            ▼
+        Data Model
 ```
-
-No requiere una API completamente diferente.
 
 ---
 
-# 211. Marine API
+# 95. API pública para terceros
+
+La API debe permitir aplicaciones externas sin exponer información innecesaria.
+
+Un tercero puede solicitar:
+
+```text
+entities:read
+```
+
+y recibir:
+
+```text
+temperature
+humidity
+power
+light state
+```
+
+sin obtener:
+
+```text
+passwords
+tokens
+GPIO
+hardware secrets
+network credentials
+```
+
+---
+
+# 96. API Tokens
+
+Las aplicaciones externas podrán utilizar tokens limitados.
+
+Ejemplo conceptual:
+
+```json
+{
+  "token_id": "token_app_01",
+  "scopes": [
+    "entities:read"
+  ],
+  "expires_at": "2027-01-01T00:00:00Z"
+}
+```
+
+Los secretos reales nunca deben almacenarse dentro de respuestas normales.
+
+---
+
+# 97. Secret References
+
+Cuando un recurso necesita una credencial:
+
+```json
+{
+  "password_ref": "secret:mqtt.password"
+}
+```
+
+No:
+
+```json
+{
+  "password": "MiPassword123"
+}
+```
+
+La API debe evitar devolver secretos salvo operaciones administrativas específicamente autorizadas.
+
+---
+
+# 98. Validación
+
+Toda entrada debe validarse antes de ejecutarse.
+
+```text
+Request
+  ↓
+Syntax Validation
+  ↓
+Schema Validation
+  ↓
+Authorization
+  ↓
+Semantic Validation
+  ↓
+Safety Validation
+  ↓
+Execution
+```
 
 Ejemplo:
 
 ```text
-water.temperature
-tank.level
-pump
-bilge_alarm
-battery.voltage
+brightness = 150
 ```
 
-El mismo modelo continúa siendo válido.
-
----
-
-# 212. Scalability
-
-La API debe ser válida desde:
+debe rechazarse si el rango permitido es:
 
 ```text
-1 Node
-```
-
-hasta:
-
-```text
-1000+ Nodes
-```
-
-sin cambiar el modelo conceptual.
-
-La implementación puede utilizar diferentes estrategias de almacenamiento y routing según escala.
-
----
-
-# 213. Minimal Node
-
-Un ESP32 pequeño puede implementar:
-
-```text
-GET /system
-GET /entities
-GET /entities/{id}/state
-POST /entities/{id}/commands
-WebSocket
+0–100
 ```
 
 ---
 
-# 214. Full Central
+# 99. Validación de seguridad física
 
-El Central puede implementar toda la API.
-
-```text
-System
-Sites
-Zones
-Groups
-Devices
-Resources
-Capabilities
-Entities
-States
-Commands
-Events
-History
-Functions
-Scenes
-Automations
-Integrations
-Users
-Roles
-Diagnostics
-Audit
-```
-
----
-
-# 215. API Evolution
-
-La API debe evolucionar sin obligar a actualizar simultáneamente todos los nodos.
+La API no debe ser el único nivel de seguridad.
 
 Ejemplo:
 
 ```text
-Central v2
-Node v1
+API solicita:
+heater = ON
 ```
 
-pueden coexistir mediante:
+Pero el nodo puede rechazarlo debido a:
 
 ```text
-schema compatibility
-capability negotiation
-protocol version
+overtemperature
+emergency_stop
+hardware_fault
+interlock
+sensor_invalid
+```
+
+Por lo tanto:
+
+> La autorización de software no reemplaza las protecciones locales de hardware o firmware.
+
+---
+
+# 100. Concurrencia
+
+Si dos clientes intentan modificar simultáneamente un recurso:
+
+```text
+Client A ──┐
+           ├── Entity
+Client B ──┘
+```
+
+el sistema debe utilizar:
+
+```text
+version
+ETag
+If-Match
+command ordering
+```
+
+cuando corresponda.
+
+---
+
+# 101. Orden de comandos
+
+Los comandos sobre un mismo recurso pueden requerir orden.
+
+Ejemplo:
+
+```text
+OPEN
+STOP
+CLOSE
+```
+
+El sistema no debe ejecutarlos arbitrariamente:
+
+```text
+CLOSE
+OPEN
+STOP
+```
+
+si la función requiere orden temporal.
+
+El Command Manager deberá establecer políticas de:
+
+```text
+ordering
+priority
+queue
+replacement
+cancellation
 ```
 
 ---
 
-# 216. Backward Compatibility
+# 102. Comandos redundantes
 
-Un Central nuevo debe poder comunicarse con Nodes antiguos mientras sean compatibles.
+El sistema debería poder evitar comandos innecesarios.
 
-Un Node antiguo debe ignorar funcionalidades que no soporte.
+Ejemplo:
+
+```text
+Entity already ON
+Client → turn_on
+```
+
+Puede responder:
+
+```text
+executed
+```
+
+sin accionar físicamente el dispositivo nuevamente, siempre que el comportamiento de la entidad lo permita.
 
 ---
 
-# 217. Forward Compatibility
+# 103. Escenas y comandos distribuidos
 
-Los clientes deben ignorar:
+Una escena puede afectar varios nodos:
 
 ```text
-unknown fields
-unknown optional capabilities
+Scene
+ │
+ ├── Node A → Light
+ ├── Node B → Blind
+ ├── Node C → HVAC
+ └── Node D → Alarm
 ```
 
-siempre que sea seguro hacerlo.
+La API debe proporcionar un identificador de ejecución:
+
+```text
+scene_execution_id
+```
+
+para poder consultar el resultado global.
 
 ---
 
-# 218. Deprecation
+# 104. Automation Execution
 
-Los endpoints obsoletos deben marcarse:
+Las automatizaciones también pueden generar múltiples comandos.
+
+Debe poder existir:
 
 ```text
-deprecated
+automation_execution_id
 ```
 
-y mantenerse durante un período definido.
+para diagnóstico.
+
+Ejemplo:
+
+```text
+Automation triggered
+       ↓
+Execution ID
+       ↓
+Action 1
+Action 2
+Action 3
+       ↓
+Completed
+```
+
+---
+
+# 105. Transactions
+
+Las operaciones complejas podrán utilizar transacciones lógicas.
+
+Ejemplo:
+
+```text
+Scene Activation
+```
+
+No necesariamente implica una transacción ACID tradicional.
+
+Puede utilizar:
+
+```text
+best effort
+rollback
+compensation
+partial success
+```
+
+Resultado:
+
+```json
+{
+  "status": "partial_success",
+  "successful": 3,
+  "failed": 1
+}
+```
+
+---
+
+# 106. Estado parcial
+
+En sistemas distribuidos no siempre es posible obtener un estado global simultáneo.
+
+Por ello:
+
+```text
+Global State
+```
+
+debe entenderse como una vista agregada con timestamps y calidad individual.
+
+Ejemplo:
+
+```text
+Living temperature → 22.4 °C → good
+Garden temperature → 18.2 °C → good
+Garage temperature → 21.1 °C → stale
+```
+
+---
+
+# 107. Observabilidad
+
+Toda operación importante debe poder rastrearse mediante:
+
+```text
+request_id
+command_id
+event_id
+correlation_id
+source
+timestamp
+```
+
+Ejemplo:
+
+```text
+API Request
+    │
+request_id
+    │
+    ▼
+Command
+    │
+command_id
+    │
+    ▼
+System Bus
+    │
+correlation_id
+    │
+    ▼
+Event
+```
+
+---
+
+# 108. Logs
+
+Los logs internos podrán asociarse a:
+
+```text
+request_id
+command_id
+event_id
+node_id
+device_id
+entity_id
+```
+
+Esto permite reconstruir una operación completa.
+
+---
+
+# 109. Compatibilidad hacia adelante
+
+Los clientes deben ignorar campos desconocidos cuando no sean necesarios para interpretar correctamente el mensaje.
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "sensor.temp",
+  "value": 22.5,
+  "unit": "°C",
+  "new_future_field": true
+}
+```
+
+Un cliente antiguo puede ignorar:
+
+```text
+new_future_field
+```
+
+---
+
+# 110. Campos obligatorios
+
+Los campos obligatorios no deben eliminarse dentro de una versión compatible.
+
+Para eliminar un campo:
+
+```text
+Deprecation
+   ↓
+Warning
+   ↓
+Migration period
+   ↓
+New API version
+```
+
+---
+
+# 111. Enumeraciones
+
+Las enumeraciones deben diseñarse para permitir futuras extensiones.
+
+Por ejemplo:
+
+```text
+quality:
+    good
+    uncertain
+    stale
+    invalid
+    unavailable
+```
+
+Los clientes deben manejar correctamente valores desconocidos.
+
+---
+
+# 112. Límites para dispositivos embebidos
+
+La API debe poder ejecutarse en microcontroladores.
+
+Por ello se deben evitar:
+
+* respuestas gigantes;
+* JSON sin límites;
+* arrays ilimitados;
+* recursividad innecesaria;
+* consultas históricas ilimitadas;
+* múltiples operaciones bloqueantes;
+* asignaciones de memoria impredecibles.
+
+Debe existir:
+
+```text
+max_request_size
+max_response_size
+max_entities_per_request
+max_events_per_request
+max_command_batch
+```
+
+---
+
+# 113. Batch Operations
+
+Cuando sea necesario, podrán agruparse operaciones.
 
 Ejemplo:
 
 ```http
-Deprecation: true
+POST /api/v1/commands/batch
 ```
+
+```json
+{
+  "commands": [
+    {
+      "entity_id": "light.living",
+      "command": "turn_on"
+    },
+    {
+      "entity_id": "light.kitchen",
+      "command": "turn_off"
+    }
+  ]
+}
+```
+
+La respuesta debe indicar el resultado individual.
 
 ---
 
-# 219. API Lifecycle
+# 114. API de Firmware
+
+Las operaciones de firmware son administrativas y no forman parte del control normal.
+
+Podrán incluir:
+
+```http
+GET /api/v1/firmware
+GET /api/v1/nodes/{node_id}/firmware
+POST /api/v1/nodes/{node_id}/firmware/update
+```
+
+Deben requerir permisos elevados.
+
+---
+
+# 115. Reset
+
+Las operaciones destructivas deben estar separadas.
+
+Ejemplo:
+
+```http
+POST /api/v1/system/reboot
+POST /api/v1/system/reset/configuration
+POST /api/v1/system/reset/factory
+```
+
+No debe existir un único endpoint ambiguo como:
 
 ```text
-draft
-experimental
-stable
-deprecated
-removed
+/reset
 ```
-
-Sólo `stable` debe considerarse contrato de producción.
 
 ---
 
-# 220. API Naming
+# 116. Confirmación de operaciones destructivas
 
-Los nombres deben ser:
+Las operaciones críticas deben poder requerir:
 
-* consistentes;
-* predecibles;
-* semánticos;
-* en inglés para el protocolo;
-* independientes del idioma de la UI.
+```text
+confirmation
+authorization
+re-authentication
+```
+
+Ejemplo:
+
+```json
+{
+  "confirm": true
+}
+```
+
+---
+
+# 117. Discovery API
+
+La API de discovery debe poder devolver:
+
+```json
+{
+  "node_id": "node.garden",
+  "hardware_profile": "NODE_ETH_WROOM_LAN8720_REV_A",
+  "firmware_version": "1.2.0",
+  "capabilities": [
+    "temperature",
+    "humidity",
+    "relay"
+  ],
+  "status": "unprovisioned"
+}
+```
+
+---
+
+# 118. Health vs Availability
+
+No deben confundirse.
+
+```text
+Node health
+```
+
+indica el estado del controlador.
+
+```text
+Entity availability
+```
+
+indica si una entidad puede utilizarse.
+
+Un nodo puede estar:
+
+```text
+healthy
+```
+
+mientras un sensor conectado esté:
+
+```text
+unavailable
+```
+
+---
+
+# 119. API de configuración de módulos
+
+Los módulos instalados podrán consultarse:
+
+```http
+GET /api/v1/nodes/{node_id}/modules
+GET /api/v1/modules
+```
+
+Administración:
+
+```http
+POST /api/v1/modules/{module_id}/enable
+POST /api/v1/modules/{module_id}/disable
+GET /api/v1/modules/{module_id}/config
+PATCH /api/v1/modules/{module_id}/config
+```
+
+Esto coincide con el principio de módulos habilitables/deshabilitables desde la interfaz web.
+
+---
+
+# 120. API de permisos por módulo
+
+Un módulo no debe recibir automáticamente permisos administrativos.
+
+Debe declarar:
+
+```text
+required capabilities
+required resources
+required permissions
+```
+
+El sistema valida las dependencias antes de activarlo.
+
+---
+
+# 121. API de dispositivos virtuales
+
+La API debe admitir entidades que no correspondan directamente a hardware.
+
+Ejemplos:
+
+```text
+sensor.average_temperature
+energy.house.total
+binary_sensor.house_occupied
+climate.house
+scene.night
+```
+
+Esto permite crear lógica de alto nivel.
+
+---
+
+# 122. API de entidades calculadas
 
 Ejemplo:
 
 ```text
-/entities
-/devices
-/zones
-/automations
+sensor.house.average_temperature
 ```
 
-La interfaz de usuario puede traducir los nombres.
-
----
-
-# 221. REST Resource Hierarchy
-
-La estructura recomendada:
+puede calcularse a partir de:
 
 ```text
-/sites
-/zones
-/groups
-/devices
-/resources
-/capabilities
-/entities
-/functions
-/scenes
-/automations
-/events
-/history
-/commands
-/integrations
-/users
-/roles
-/system
-/diagnostics
+sensor.living.temperature
+sensor.kitchen.temperature
+sensor.bedroom.temperature
 ```
+
+La API debe tratar el resultado como una entidad normal.
 
 ---
 
-# 222. Nested Resources
+# 123. API de alarmas
 
-Se podrán utilizar cuando mejoren la navegación:
+Podrá utilizarse:
+
+```http
+GET /api/v1/alarms
+GET /api/v1/alarms/{alarm_id}
+POST /api/v1/alarms/{alarm_id}/acknowledge
+POST /api/v1/alarms/{alarm_id}/clear
+```
+
+Las alarmas deben mantener:
 
 ```text
-/devices/{device_id}/entities
-/zones/{zone_id}/entities
-/entities/{entity_id}/state
-/entities/{entity_id}/commands
+active
+acknowledged
+cleared
 ```
 
-Pero no debe crearse una jerarquía excesivamente profunda.
+y su historial correspondiente.
 
 ---
 
-# 223. Canonical Resource
+# 124. API de energía
 
-Cada objeto debe tener un endpoint canónico.
+El modelo debe soportar:
+
+```text
+voltage
+current
+power
+energy
+frequency
+power_factor
+```
+
+Ejemplos:
+
+```text
+sensor.house.power
+sensor.house.energy
+sensor.garage.current
+```
+
+---
+
+# 125. API de agua
+
+Debe poder representar:
+
+```text
+flow
+volume
+pressure
+leak
+valve
+pump
+```
+
+Ejemplos:
+
+```text
+sensor.garden.flow
+sensor.house.water_volume
+binary_sensor.bathroom.leak
+switch.garden.pump
+```
+
+---
+
+# 126. API ambiental
+
+Debe soportar:
+
+```text
+temperature
+humidity
+pressure
+air_quality
+CO2
+PM1
+PM2.5
+PM10
+VOC
+illuminance
+UV
+wind
+rain
+```
+
+---
+
+# 127. API agrícola
+
+El mismo modelo debe permitir:
+
+```text
+soil_moisture
+soil_temperature
+soil_ec
+soil_ph
+irrigation
+valves
+pumps
+weather
+crop_zone
+```
+
+sin modificar la arquitectura principal.
+
+---
+
+# 128. API industrial
+
+También podrá representar:
+
+```text
+machine
+motor
+pump
+valve
+PLC
+Modbus register
+production counter
+alarm
+energy meter
+```
+
+Los detalles industriales deben permanecer en:
+
+```text
+Resource
+Device
+Capability
+```
+
+y no contaminar el modelo lógico general.
+
+---
+
+# 129. API marina
+
+Podrá representar:
+
+```text
+bilge
+pump
+tank
+battery
+engine
+temperature
+pressure
+GPS
+wind
+navigation
+```
+
+utilizando las mismas abstracciones.
+
+---
+
+# 130. API de cámara e IA
+
+El sistema podrá exponer entidades relacionadas con visión:
+
+```text
+camera.front
+binary_sensor.person_detected
+binary_sensor.vehicle_detected
+sensor.people_count
+sensor.object_confidence
+```
+
+La API no debe exigir que el cliente conozca el modelo de IA.
+
+Puede incluir:
+
+```text
+confidence
+model
+inference_time
+source
+```
+
+cuando corresponda.
+
+---
+
+# 131. Compatibilidad con IA
+
+Los resultados de IA deben considerarse datos con:
+
+```text
+confidence
+timestamp
+model_version
+source
+quality
+```
 
 Ejemplo:
 
-```text
-/entities/light.living.main
-```
-
-Aunque también pueda encontrarse mediante:
-
-```text
-/zones/zone.living/entities
-```
-
----
-
-# 224. API Response Envelope
-
-Para recursos individuales:
-
 ```json
 {
-  "data": {}
-}
-```
-
-Para colecciones:
-
-```json
-{
-  "data": [],
-  "pagination": {}
-}
-```
-
-La implementación final deberá mantener consistencia en toda la API.
-
----
-
-# 225. Metadata
-
-Las respuestas pueden incluir:
-
-```json
-{
-  "meta": {
-    "request_id": "req_123",
-    "timestamp": "2026-10-05T15:30:00Z"
+  "entity_id": "binary_sensor.person_detected",
+  "state": {
+    "value": true,
+    "confidence": 0.94
   }
 }
 ```
 
 ---
 
-# 226. Complete Example
+# 132. API Contract
+
+La implementación debe considerar los siguientes archivos como contrato:
+
+```text
+schemas/
+    api/
+    data-model/
+    system-bus/
+```
+
+Los endpoints no deben inventar estructuras diferentes a las definidas en `DATA-SCHEMAS.md`.
+
+---
+
+# 133. JSON Schema
+
+Las estructuras oficiales deberán expresarse mediante JSON Schema.
+
+Estructura recomendada:
+
+```text
+schemas/
+└── v1/
+    ├── common/
+    ├── sites/
+    ├── zones/
+    ├── devices/
+    ├── resources/
+    ├── capabilities/
+    ├── entities/
+    ├── commands/
+    ├── events/
+    ├── scenes/
+    ├── automations/
+    ├── integrations/
+    ├── diagnostics/
+    └── api/
+```
+
+---
+
+# 134. Validación automática
+
+La implementación futura deberá poder validar:
+
+```text
+API request
+API response
+System Bus message
+Configuration
+Event
+Command
+Telemetry
+```
+
+contra los schemas correspondientes.
+
+---
+
+# 135. Testing de API
+
+Se deben implementar pruebas para:
+
+### Funcionales
+
+```text
+GET
+POST
+PATCH
+DELETE
+```
+
+### Seguridad
+
+```text
+401
+403
+token expiration
+scope validation
+rate limiting
+```
+
+### Datos
+
+```text
+invalid types
+missing fields
+invalid ranges
+unknown enum
+invalid IDs
+```
+
+### Distribución
+
+```text
+node offline
+central offline
+network timeout
+duplicate command
+reconnection
+state synchronization
+```
+
+---
+
+# 136. Contract Testing
+
+Los siguientes componentes deben utilizar contract testing:
+
+```text
+Firmware
+Central
+Web UI
+Mobile App
+Integrations
+Third-party clients
+```
+
+El objetivo es evitar que una actualización del firmware rompa la API.
+
+---
+
+# 137. Golden Fixtures
+
+Se recomienda mantener ejemplos oficiales:
+
+```text
+tests/
+└── fixtures/
+    ├── entity.json
+    ├── state.json
+    ├── command.json
+    ├── event.json
+    ├── telemetry.json
+    ├── scene.json
+    ├── automation.json
+    └── error.json
+```
+
+Estos archivos funcionan como casos de referencia.
+
+---
+
+# 138. Compatibilidad de firmware
+
+Un firmware debe declarar:
+
+```json
+{
+  "api_version": "v1",
+  "schema_version": "1.0.0",
+  "firmware_version": "2.4.1"
+}
+```
+
+Central podrá determinar si el nodo es compatible.
+
+---
+
+# 139. Deprecación
+
+Cuando una función vaya a desaparecer:
+
+```text
+Active
+   ↓
+Deprecated
+   ↓
+Compatibility period
+   ↓
+Removed in new major version
+```
+
+La API podrá incluir:
+
+```http
+Deprecation: true
+```
+
+y documentación de migración.
+
+---
+
+# 140. Migración
+
+Las migraciones deben documentar:
+
+```text
+old endpoint
+new endpoint
+old schema
+new schema
+behavior changes
+breaking changes
+```
+
+Ejemplo:
+
+```text
+/api/v1/entities/{id}/command
+```
+
+→
+
+```text
+/api/v2/entities/{id}/commands
+```
+
+---
+
+# 141. Convención de nombres
+
+Se recomienda:
+
+```text
+snake_case
+```
+
+para propiedades JSON.
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "light.living",
+  "device_id": "device.living",
+  "firmware_version": "1.0.0"
+}
+```
+
+Los nombres de endpoints utilizarán:
+
+```text
+kebab-case
+```
+
+cuando sea necesario separar palabras, aunque la mayoría de recursos son nombres simples.
+
+---
+
+# 142. Campos adicionales
+
+Los objetos podrán contener:
+
+```json
+{
+  "metadata": {}
+}
+```
+
+para información extensible que no sea parte del contrato principal.
+
+No debe utilizarse `metadata` para ocultar propiedades que deberían formar parte del schema oficial.
+
+---
+
+# 143. Source y Origin
+
+Todo dato relevante debería poder identificar:
+
+```text
+source
+origin
+```
+
+Ejemplo:
+
+```json
+{
+  "source": "node.garden",
+  "origin": "sensor.ph"
+}
+```
+
+Esto permite distinguir:
+
+```text
+sensor físico
+entidad calculada
+automatización
+usuario
+integración externa
+IA
+```
+
+---
+
+# 144. Actor
+
+Las acciones deben poder identificar al actor.
+
+Ejemplo:
+
+```json
+{
+  "actor": {
+    "type": "user",
+    "id": "user.alessandro"
+  }
+}
+```
+
+Otros actores:
+
+```text
+user
+service
+automation
+scene
+integration
+device
+system
+```
+
+---
+
+# 145. Correlation ID
+
+Una operación compleja debe mantener:
+
+```text
+correlation_id
+```
+
+Ejemplo:
+
+```text
+User
+ ↓
+API Request
+ ↓
+Scene
+ ↓
+Command 1
+Command 2
+Command 3
+ ↓
+Events
+```
+
+Todos pueden compartir:
+
+```text
+correlation_id
+```
+
+---
+
+# 146. API y automatización local
+
+Una automatización crítica no debe depender de:
+
+```text
+HTTP request
+Central
+Internet
+Cloud
+```
+
+La API permite administrar la automatización, pero su ejecución debe producirse donde corresponda según la jerarquía de autonomía.
+
+```text
+DEVICE
+  ↓
+ZONE
+  ↓
+CENTRAL
+  ↓
+CLOUD
+```
+
+---
+
+# 147. API y seguridad funcional
+
+La API nunca debe ser el único mecanismo de seguridad para:
+
+```text
+motor
+caldera
+bomba
+puerta
+alarma
+maquinaria
+actuadores peligrosos
+```
+
+Las protecciones críticas deben estar implementadas localmente.
+
+---
+
+# 148. Ejemplo completo: sensor
 
 Solicitud:
 
 ```http
-POST /api/v1/entities/light.living.main/commands
-Authorization: Bearer <token>
-Content-Type: application/json
-Idempotency-Key: abc123
-X-Request-ID: req_001
+GET /api/v1/entities/sensor.living.temperature
+```
 
+Respuesta:
+
+```json
 {
-  "action": "turn_on",
+  "data": {
+    "entity_id": "sensor.living.temperature",
+    "domain": "sensor",
+    "name": "Temperatura Living",
+    "zone_id": "zone.living",
+    "state": {
+      "value": 23.7,
+      "unit": "°C",
+      "timestamp": "2026-10-06T12:30:00Z",
+      "quality": "good"
+    },
+    "availability": "available"
+  },
+  "request_id": "req_123"
+}
+```
+
+---
+
+# 149. Ejemplo completo: comando
+
+Solicitud:
+
+```http
+POST /api/v1/entities/light.living/commands
+Idempotency-Key: light-living-001
+```
+
+```json
+{
+  "command": "turn_on",
   "parameters": {
-    "brightness": 80
+    "brightness": 70
   }
 }
 ```
 
 Respuesta:
 
-```http
-HTTP/1.1 202 Accepted
-```
-
 ```json
 {
   "data": {
-    "command_id": "cmd_001",
-    "request_id": "req_001",
-    "status": "accepted"
+    "command_id": "cmd_123",
+    "status": "accepted",
+    "status_url": "/api/v1/commands/cmd_123"
+  },
+  "request_id": "req_123"
+}
+```
+
+---
+
+# 150. Ejemplo completo: evento
+
+```json
+{
+  "event_id": "event_123",
+  "event_type": "entity.state_changed",
+  "timestamp": "2026-10-06T12:30:01Z",
+  "source": "node.living",
+  "entity_id": "light.living",
+  "correlation_id": "cmd_123",
+  "data": {
+    "old_state": {
+      "on": false
+    },
+    "new_state": {
+      "on": true,
+      "brightness": 70
+    }
   }
 }
 ```
 
-Posteriormente:
+---
+
+# 151. Ejemplo completo: pérdida de nodo
+
+Estado anterior:
 
 ```text
-WebSocket
+node.garden = online
 ```
 
-recibe:
+Después:
 
-```json
-{
-  "type": "command_result",
-  "command_id": "cmd_001",
-  "status": "executed"
-}
+```text
+node.garden = offline
 ```
 
-y:
+La API debe reflejar:
 
-```json
-{
-  "type": "state_changed",
-  "entity_id": "light.living.main",
-  "state": {
-    "on": true,
-    "brightness": 80
-  }
-}
+```text
+Node → offline
+```
+
+y las entidades dependientes pueden pasar a:
+
+```text
+unavailable
+```
+
+sin borrar sus configuraciones.
+
+Cuando vuelve:
+
+```text
+offline
+   ↓
+online
+   ↓
+state synchronization
+   ↓
+available
 ```
 
 ---
 
-# 227. End-to-End Architecture
+# 152. Principio de no borrado por desconexión
+
+Un dispositivo desconectado no debe eliminarse automáticamente.
+
+Debe mantenerse:
 
 ```text
-┌──────────────┐
-│   Web / App  │
-└──────┬───────┘
-       │
- REST / WS
-       │
-       ▼
-┌──────────────┐
-│     API      │
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│ Data Model   │
-└──────┬───────┘
-       │
-       ▼
-┌──────────────┐
-│ System Bus   │
-└──────┬───────┘
-       │
-       ├───────────────┐
-       ▼               ▼
-   Zone Node        Integration
-       │
-       ▼
-    Entity
-       │
-       ▼
-    Resource
-       │
-       ▼
-   Hardware
-```
-
----
-
-# 228. Golden Rules
-
-## Rule 1
-
-> La API trabaja con Entities, no GPIO.
-
-## Rule 2
-
-> Los comandos representan intención, no implementación.
-
-## Rule 3
-
-> `202 Accepted` no significa `executed`.
-
-## Rule 4
-
-> Todo comando distribuido debe poder rastrearse.
-
-## Rule 5
-
-> Los estados y eventos son conceptos diferentes.
-
-## Rule 6
-
-> Las capacidades determinan qué puede hacer una Entity.
-
-## Rule 7
-
-> El cliente no debe asumir capabilities.
-
-## Rule 8
-
-> La API nunca debe saltarse las reglas de seguridad del Node.
-
-## Rule 9
-
-> El Central es un coordinador, no el único punto de ejecución.
-
-## Rule 10
-
-> La Web UI debe utilizar la misma API pública.
-
----
-
-# 229. Flujo completo de una operación
-
-```text
-USER
- │
- ▼
-WEB / APP
- │
- │ REST
- ▼
-API
- │
- ├── Authentication
- │
- ├── Authorization
- │
- ├── Validation
- │
- ├── Idempotency
- │
- └── Command Creation
- │
- ▼
-SYSTEM BUS
- │
- ├── Routing
- ├── Priority
- ├── Retry
- ├── Security
- └── Correlation
- │
- ▼
-NODE
- │
- ├── Validate
- ├── Authorize
- ├── Safety
- └── Execute
- │
- ▼
-HARDWARE
- │
- ▼
-STATE
- │
- ▼
-EVENT
- │
- ├───────────────► WebSocket
- │
- ├───────────────► Automation
- │
- ├───────────────► Integration
- │
- └───────────────► History
-```
-
----
-
-# 230. Document Status
-
-```text
-Estado: Arquitectura base definida
-
-Definido:
-
-- REST API
-- WebSocket
-- API versioning
-- Authentication boundary
-- Authorization
-- Permissions
-- Sites
-- Zones
-- Groups
-- Devices
-- Resources
-- Capabilities
-- Entities
-- States
-- Desired State
-- Commands
-- Command lifecycle
-- Events
-- History
-- Functions
-- Scenes
-- Automations
-- System Modes
-- Discovery
-- Provisioning
-- Integrations
-- Users
-- Roles
-- API Keys
-- Diagnostics
-- Audit
-- Pagination
-- Filtering
-- Sorting
-- Search
-- ETags
-- Optimistic concurrency
-- Error model
-- Rate limiting
-- CORS
-- CSRF
-- TLS
-- WebSocket subscriptions
-- Event replay
-- API capabilities
-- Virtual entities
-- External entities
-- Third-party API
-- Local Node API
-- Central API
-- Configuration API
-- Import/export
-- OpenAPI direction
-- Testing strategy
-- Compatibility strategy
-- API evolution
-
-Pendiente:
-
-- OpenAPI definitivo
-- JSON Schemas definitivos
-- endpoint-by-endpoint schemas
-- authentication implementation
-- authorization implementation
-- WebSocket protocol formal
-- pagination schema definitivo
-- error code registry
-- API rate limits definitivos
-- API key lifecycle
-- OAuth/OIDC si posteriormente fuese necesario
-- API Gateway implementation
-- OTA API
-- media/camera transport
-- federation API
-- multi-site API
-```
-
----
-
-# 231. Próximos documentos
-
-La arquitectura documental queda ahora:
-
-```text
-ARCHITECTURE.md
-       │
-       ▼
-DATA-MODEL.md
-       │
-       ▼
-DATA-SCHEMAS.md
-       │
-       ▼
-SYSTEM-BUS.md
-       │
-       ▼
-API-SPECIFICATION.md
-```
-
-El siguiente documento recomendado es:
-
-```text
-DISCOVERY-PROVISIONING.md
-```
-
-porque permitirá definir el proceso completo desde que un ESP32 se enciende por primera vez hasta que queda integrado en la instalación:
-
-```text
-ESP32 nuevo
-    ↓
-Boot
-    ↓
-Identity
-    ↓
-Network
-    ↓
-Discovery
-    ↓
-Authentication
-    ↓
-Provisioning
-    ↓
-Hardware discovery
-    ↓
-Resource discovery
-    ↓
-Capability discovery
-    ↓
-Entity creation
-    ↓
-Zone assignment
-    ↓
+Device
+Entity
 Configuration
-    ↓
-Synchronization
-    ↓
-Operational
+History
+Identity
 ```
 
-Después conviene continuar con:
+y cambiar:
 
 ```text
-EVENT-MODEL.md
-CONFIGURATION-MODEL.md
-DATABASE-STORAGE.md
-AUTOMATION-ENGINE.md
-SECURITY-ARCHITECTURE.md
-OTA-UPDATE.md
-TESTING-VALIDATION.md
+availability
 ```
 
-Esto dejará prácticamente definida toda la arquitectura antes de comenzar la implementación de firmware, Central y Web UI.
+---
+
+# 153. API Offline
+
+Si un nodo pierde Central:
+
+```text
+Node
+ ├── Local API ✓
+ ├── Local automation ✓
+ ├── Local state ✓
+ └── Internet integration ✗
+```
+
+Cuando sea posible, la API local continúa operativa.
+
+---
+
+# 154. API Centralizada
+
+Cuando Central está disponible:
+
+```text
+Client
+  ↓
+Central API
+  ↓
+Distributed System
+```
+
+Esto permite una única interfaz para toda la instalación.
+
+---
+
+# 155. API híbrida
+
+Un cliente puede descubrir:
+
+```text
+Central API
+Node API
+```
+
+y elegir según disponibilidad.
+
+La arquitectura recomienda:
+
+```text
+Central → administración global
+Node   → operación local
+```
+
+---
+
+# 156. Descubrimiento de API
+
+El sistema puede proporcionar:
+
+```http
+GET /.well-known/automation-api
+```
+
+con información como:
+
+```json
+{
+  "api_version": "v1",
+  "base_path": "/api/v1",
+  "websocket": "/api/v1/ws",
+  "authentication": [
+    "token",
+    "session"
+  ],
+  "schema_version": "1.0.0"
+}
+```
+
+---
+
+# 157. OpenAPI
+
+La API deberá disponer de una especificación OpenAPI.
+
+Ubicación recomendada:
+
+```text
+docs/api/openapi.yaml
+```
+
+o:
+
+```text
+api/openapi.yaml
+```
+
+OpenAPI debe generarse/mantenerse alineado con:
+
+```text
+API-SPECIFICATION.md
+DATA-SCHEMAS.md
+```
+
+---
+
+# 158. Documentación automática
+
+A partir de OpenAPI podrán generarse:
+
+```text
+Swagger UI
+Redoc
+SDKs
+TypeScript types
+client libraries
+testing clients
+```
+
+Esto permitirá crear posteriormente:
+
+```text
+Web App
+Android
+iOS
+Python
+C++
+Node.js
+```
+
+sin redefinir la API manualmente.
+
+---
+
+# 159. SDKs
+
+En el futuro pueden generarse SDKs:
+
+```text
+JavaScript / TypeScript
+Python
+C++
+C
+Dart
+Kotlin
+Swift
+```
+
+Los SDK deben ser consumidores del contrato OpenAPI y de los schemas.
+
+---
+
+# 160. Arquitectura final
+
+La arquitectura completa queda:
+
+```text
+                         ┌──────────────────┐
+                         │   Web / Mobile   │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │       API        │
+                         │ REST / WebSocket │
+                         └────────┬─────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │ Authentication / AuthZ    │
+                    └─────────────┬─────────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │       DATA MODEL          │
+                    └─────────────┬─────────────┘
+                                  │
+                    ┌─────────────▼─────────────┐
+                    │       SYSTEM BUS          │
+                    └─────────────┬─────────────┘
+                                  │
+             ┌────────────────────┼────────────────────┐
+             ▼                    ▼                    ▼
+        ┌─────────┐         ┌───────────┐        ┌─────────┐
+        │ Central │         │ Zone Ctrl │        │  Nodes  │
+        └─────────┘         └───────────┘        └─────────┘
+             │                    │                    │
+             └────────────────────┼────────────────────┘
+                                  ▼
+                         Hardware / Resources
+```
+
+---
+
+# 161. Principios de diseño definitivos
+
+La API debe cumplir las siguientes reglas:
+
+### 1. La API trabaja con lógica, no con hardware
+
+```text
+Entity ≠ GPIO
+Entity ≠ Modbus Register
+Entity ≠ CAN ID
+```
+
+---
+
+### 2. El modelo interno es la fuente de verdad
+
+```text
+Hardware
+   ↓
+Resource
+   ↓
+Capability
+   ↓
+Entity
+   ↓
+API / Integration
+```
+
+---
+
+### 3. REST no reemplaza al System Bus
+
+Son capas diferentes.
+
+---
+
+### 4. Un comando no es un estado
+
+```text
+Command → intención
+State   → condición
+Event   → hecho ocurrido
+```
+
+---
+
+### 5. Central no es obligatorio para la autonomía
+
+```text
+Local automation > Central dependency
+```
+
+---
+
+### 6. Los IDs lógicos son estables
+
+Cambiar hardware no debe cambiar:
+
+```text
+light.living
+sensor.living.temperature
+switch.pump
+```
+
+---
+
+### 7. Las integraciones son adaptadores
+
+```text
+Internal Model
+      ↓
+Adapter
+      ↓
+External Ecosystem
+```
+
+---
+
+### 8. Los errores tienen códigos estables
+
+Los clientes no deben interpretar textos.
+
+---
+
+### 9. Las operaciones distribuidas son asíncronas
+
+```text
+202 Accepted
+    ↓
+command_id
+    ↓
+status
+```
+
+---
+
+### 10. La seguridad se aplica en múltiples niveles
+
+```text
+API
+ ↓
+Authorization
+ ↓
+System Bus
+ ↓
+Node
+ ↓
+Hardware Safety
+```
+
+---
+
+### 11. La pérdida de conectividad no debe destruir el sistema
+
+Un nodo desconectado conserva:
+
+```text
+configuration
+identity
+local automation
+critical state
+```
+
+---
+
+### 12. La API debe poder crecer
+
+La misma API debe servir para:
+
+```text
+Casa
+Oficina
+Agricultura
+Industria ligera
+Invernadero
+Estación meteorológica
+Barco
+Edificio
+```
+
+sin crear arquitecturas diferentes.
+
+---
+
+# 162. Estructura recomendada del proyecto
+
+```text
+project/
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── DATA-MODEL.md
+│   ├── DATA-SCHEMAS.md
+│   ├── SYSTEM-BUS.md
+│   ├── API-SPECIFICATION.md
+│   └── API-AUTHENTICATION-AUTHORIZATION.md
+│
+├── api/
+│   └── openapi.yaml
+│
+├── schemas/
+│   ├── v1/
+│   │   ├── common/
+│   │   ├── entities/
+│   │   ├── devices/
+│   │   ├── commands/
+│   │   ├── events/
+│   │   ├── scenes/
+│   │   ├── automations/
+│   │   ├── integrations/
+│   │   └── diagnostics/
+│
+├── tests/
+│   ├── api/
+│   ├── schemas/
+│   └── fixtures/
+│
+└── src/
+    ├── api/
+    ├── auth/
+    ├── data_model/
+    ├── system_bus/
+    └── services/
+```
+
+---
+
+# 163. Evolución futura
+
+La API podrá incorporar posteriormente:
+
+```text
+GraphQL
+gRPC
+SSE
+QUIC
+CBOR
+Protobuf
+Binary RPC
+```
+
+pero estos mecanismos deben utilizar el mismo:
+
+```text
+Data Model
+Data Schemas
+Command Model
+Event Model
+Authorization Model
+```
+
+No deben crear modelos paralelos.
+
+---
+
+# 164. Regla de oro
+
+> **La API es la interfaz pública del sistema lógico. El hardware, el transporte y la implementación interna pueden cambiar sin romper la identidad ni el comportamiento lógico de las entidades.**
+
+La arquitectura completa debe permitir:
+
+```text
+ESP32
+ESP32-S3
+ESP32-C6
+ESP32-C5
+ESP32-H2
+ESP32-P4
+        │
+        ▼
+Different Hardware
+        │
+        ▼
+Same Device Model
+        │
+        ▼
+Same API
+        │
+        ▼
+Same Applications
+```
+
+Y, al mismo tiempo:
+
+```text
+Wi-Fi
+Ethernet
+CAN
+RS485
+Zigbee
+Thread
+Matter
+MQTT
+        │
+        ▼
+Same Logical System
+```
+
+Por lo tanto:
+
+> **El sistema no debe estar diseñado alrededor de un microcontrolador, un protocolo o una placa determinada. Debe estar diseñado alrededor de un modelo lógico estable, una API versionada y contratos de datos bien definidos.**
+
+---
+
+# 165. Próximo paso recomendado
+
+Una vez establecidos:
+
+```text
+DATA-MODEL.md
+DATA-SCHEMAS.md
+SYSTEM-BUS.md
+API-SPECIFICATION.md
+API-AUTHENTICATION-AUTHORIZATION.md
+```
+
+el siguiente nivel debería ser formalizar:
+
+```text
+OpenAPI
+   +
+JSON Schemas
+   +
+System Bus Message Schemas
+   +
+Error Codes
+   +
+Command/Event Contracts
+```
+
+Esto permitirá comenzar a implementar el firmware y el Central sin que cada módulo tenga que inventar su propio formato de comunicación.
