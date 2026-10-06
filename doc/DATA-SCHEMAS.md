@@ -1,114 +1,106 @@
 # DATA-SCHEMAS.md
 
-# Data Schemas — Distributed Automation Platform
+# Data Schemas — Esquemas de Datos de la Plataforma
 
-> **Tipo:** Especificación técnica
-> **Estado:** Diseño
+> **Tipo:** Arquitectura / Convención
+> **Estado:** Planificación
 > **Versión:** 1.0.0
-> **Última actualización:** 2026-10-05
-> **Objetivo:** Definir los esquemas de datos formales utilizados por dispositivos, nodos, zonas, Central, API, System Bus, Web UI, automatizaciones e integraciones externas.
+> **Fecha:** 2026-10-06
 
 ---
 
-## 1. Objetivo
+# 1. Propósito
 
-`DATA-SCHEMAS.md` define los contratos estructurales de datos de la plataforma.
+Este documento define los **esquemas de datos canónicos** utilizados por la plataforma de automatización distribuida.
 
-Mientras `DATA-MODEL.md` define **qué conceptos existen y cómo se relacionan**, este documento define **cómo se representan esos conceptos técnicamente**.
+Los esquemas definidos aquí establecen una representación común para:
 
-La plataforma debe utilizar estos esquemas como contrato común entre:
+* dispositivos;
+* recursos;
+* capacidades;
+* entidades;
+* estados;
+* comandos;
+* eventos;
+* escenas;
+* automatizaciones;
+* zonas;
+* grupos;
+* funciones;
+* modos;
+* configuraciones;
+* diagnósticos;
+* errores;
+* mensajes del System Bus;
+* sincronización entre nodos;
+* API;
+* integraciones externas.
 
-```text
-┌───────────────────────────────────────────────┐
-│                 DATA SCHEMAS                  │
-├───────────────────────────────────────────────┤
-│                                               │
-│ Firmware       ESP32 / Nodes                  │
-│ Central        ESP32-S3                       │
-│ Web UI         Administración                 │
-│ API            REST / WebSocket               │
-│ System Bus     Comunicación interna           │
-│ Storage        Persistencia                   │
-│ Automations    Reglas                         │
-│ Integrations   Matter / MQTT / HA / etc.      │
-│ Mobile Apps    Clientes futuros               │
-│ Third Party    Aplicaciones externas          │
-│                                               │
-└───────────────────────────────────────────────┘
-```
-
-La misma entidad lógica debe mantener una estructura compatible independientemente de dónde se encuentre almacenada o transportada.
-
----
-
-# 2. Principios
-
-## 2.1 Source of Truth
-
-El modelo interno de datos es la fuente de verdad de la plataforma.
-
-```text
-Hardware
-    ↓
-Resource
-    ↓
-Capability
-    ↓
-Entity
-    ↓
-State
-    ↓
-Command / Event
-    ↓
-Integration
-```
-
-Las integraciones externas **no deben modificar directamente el modelo físico**.
+El objetivo es que diferentes componentes puedan intercambiar información sin necesidad de conocer cómo fue implementada físicamente.
 
 ---
 
-## 2.2 Independencia del hardware
+# 2. Relación con otros documentos
 
-Los esquemas nunca deben depender directamente de:
-
-* GPIO;
-* número de pin;
-* dirección I2C;
-* registro Modbus;
-* CAN ID;
-* dirección MAC;
-* IP;
-* endpoint MQTT;
-* endpoint Matter.
-
-Estos datos pertenecen al modelo físico/configuración.
-
-Por ejemplo:
-
-```json
-{
-  "entity_id": "light.living.main",
-  "state": {
-    "on": true
-  }
-}
-```
-
-debe seguir siendo válido aunque el dispositivo cambie de:
+La arquitectura de datos queda organizada de la siguiente manera:
 
 ```text
-GPIO 12
+ARCHITECTURE.md
+       │
+       ▼
+DEVICE-MODEL.md
+       │
+       ▼
+DATA-MODEL.md
+       │
+       ▼
+DATA-SCHEMAS.md
+       │
+ ┌─────┴──────────────┐
+ ▼                    ▼
+SYSTEM-BUS.md     API-SPECIFICATION.md
+ │                    │
+ ▼                    ▼
+Nodes              External Clients
 ```
 
-a:
+Cada documento tiene una responsabilidad diferente.
 
-```text
-GPIO 25
-```
+| Documento                             | Responsabilidad                   |
+| ------------------------------------- | --------------------------------- |
+| `ARCHITECTURE.md`                     | Arquitectura general              |
+| `DEVICE-MODEL.md`                     | Modelo conceptual de dispositivos |
+| `DATA-MODEL.md`                       | Entidades y relaciones            |
+| `DATA-SCHEMAS.md`                     | Representación concreta de datos  |
+| `SYSTEM-BUS.md`                       | Comunicación interna              |
+| `API-SPECIFICATION.md`                | API externa                       |
+| `API-AUTHENTICATION-AUTHORIZATION.md` | Seguridad de API                  |
 
 ---
 
-# 3. Formato principal
+# 3. Principio fundamental
+
+La plataforma tendrá un **modelo de datos canónico interno**.
+
+Las diferentes interfaces deberán adaptarse a este modelo.
+
+```text
+                 CANONICAL DATA MODEL
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+          ▼              ▼              ▼
+      System Bus        REST          MQTT
+          │              │              │
+          ▼              ▼              ▼
+       Nodes          Clients       Integrations
+```
+
+No se deberá crear un modelo diferente para cada transporte o integración.
+
+---
+
+# 4. Formato principal
 
 El formato principal de intercambio será:
 
@@ -116,73 +108,101 @@ El formato principal de intercambio será:
 JSON
 ```
 
-Se utilizará para:
+por sus características:
 
-* API REST;
-* WebSocket;
-* configuración;
-* archivos de configuración;
-* eventos;
-* debugging;
-* documentación;
-* integración externa.
-
-Para transportes de bajo nivel podrán utilizarse representaciones binarias equivalentes:
-
-* CBOR;
-* MessagePack;
-* Protobuf;
-* formato binario propio.
-
-La representación binaria debe conservar la semántica del modelo JSON.
+* legibilidad;
+* facilidad de depuración;
+* compatibilidad;
+* disponibilidad de librerías;
+* facilidad de integración;
+* uso directo desde navegadores;
+* compatibilidad con REST y WebSocket.
 
 ---
 
-# 4. JSON Schema
+# 5. Formatos alternativos
 
-Los esquemas deberán ser compatibles preferentemente con:
+La arquitectura podrá soportar posteriormente:
 
 ```text
-JSON Schema Draft 2020-12
+CBOR
+MessagePack
+Protobuf
 ```
 
-Referencia:
+Estos formatos podrán utilizarse cuando:
+
+* el ancho de banda sea limitado;
+* el mensaje sea muy frecuente;
+* el consumo de RAM sea crítico;
+* se requiera mayor eficiencia;
+* el transporte tenga restricciones de tamaño.
+
+La semántica deberá mantenerse idéntica.
 
 ```text
-https://json-schema.org/draft/2020-12/schema
-```
-
-Los esquemas oficiales deberán almacenarse posteriormente en:
-
-```text
-schemas/
-├── common/
-├── site/
-├── zone/
-├── group/
-├── device/
-├── resource/
-├── capability/
-├── entity/
-├── state/
-├── command/
-├── event/
-├── automation/
-├── scene/
-├── function/
-├── system/
-└── integration/
+JSON
+  ↕
+Canonical Model
+  ↕
+CBOR / MessagePack / Protobuf
 ```
 
 ---
 
-# 5. Convenciones generales
+# 6. JSON como representación de referencia
 
-## 5.1 Identificadores
+Cuando existan múltiples formatos, JSON será la representación de referencia para documentación.
 
-Todo objeto persistente debe poseer un identificador estable.
+Ejemplo:
 
-Tipos principales:
+```json
+{
+  "entity_id": "sensor.living.temperature",
+  "state": {
+    "value": 24.5,
+    "unit": "°C"
+  }
+}
+```
+
+La representación binaria deberá producir exactamente la misma información semántica.
+
+---
+
+# 7. Convenciones generales
+
+Los nombres de propiedades utilizarán:
+
+```text
+snake_case
+```
+
+Ejemplo:
+
+```json
+{
+  "device_id": "node_001",
+  "hardware_profile": "NODE_ETH_WROOM",
+  "firmware_version": "1.0.0"
+}
+```
+
+No:
+
+```json
+{
+  "deviceId": "node_001"
+}
+```
+
+salvo que una integración externa requiera otra convención.
+
+---
+
+# 8. Identificadores
+
+La plataforma utiliza diferentes identificadores.
 
 ```text
 site_id
@@ -197,11 +217,18 @@ scene_id
 automation_id
 command_id
 event_id
+message_id
 request_id
 correlation_id
 ```
 
-Se recomienda:
+Cada uno tiene una finalidad diferente.
+
+---
+
+# 9. UUID / ULID
+
+Para identificadores internos se recomienda utilizar:
 
 ```text
 UUID
@@ -213,197 +240,106 @@ o:
 ULID
 ```
 
-Los identificadores nunca deben reutilizarse después de eliminar permanentemente un objeto.
-
----
-
-# 6. Identificadores lógicos
-
-Los objetos pueden tener:
-
-### ID interno
-
-```json
-{
-  "id": "01JXYZ..."
-}
-```
-
-### ID lógico
-
-```json
-{
-  "entity_id": "light.living.main"
-}
-```
-
-El ID interno identifica el objeto físicamente dentro del sistema.
-
-El ID lógico facilita:
-
-* API;
-* automatizaciones;
-* integración;
-* debugging;
-* configuración;
-* uso humano.
-
----
-
-# 7. Nombres
-
-Los nombres visibles no deben utilizarse como identificadores.
+ULID es especialmente interesante para registros históricos porque mantiene orden temporal.
 
 Ejemplo:
 
-```json
-{
-  "entity_id": "light.living.main",
-  "name": "Luz principal del living"
-}
-```
-
-El usuario puede cambiar:
-
 ```text
-Luz principal del living
+01J...
 ```
 
-sin modificar:
-
-```text
-light.living.main
-```
+No obstante, los identificadores legibles por el usuario pueden mantenerse separados.
 
 ---
 
-# 8. Versionado
+# 10. Internal ID vs Entity ID
 
-Todos los objetos persistentes deberán permitir conocer la versión de su esquema.
-
-Ejemplo:
-
-```json
-{
-  "schema": "entity",
-  "schema_version": "1.0.0"
-}
-```
-
-Se utilizará Semantic Versioning:
+Se debe distinguir:
 
 ```text
-MAJOR.MINOR.PATCH
+internal_id
 ```
 
-### MAJOR
-
-Cambios incompatibles.
-
-### MINOR
-
-Nuevos campos o capacidades compatibles.
-
-### PATCH
-
-Correcciones sin cambio estructural.
-
----
-
-# 9. Timestamps
-
-Los timestamps deben utilizar:
+de:
 
 ```text
-ISO 8601 / RFC 3339
+entity_id
 ```
 
 Ejemplo:
 
 ```text
-2026-10-05T15:32:10Z
+internal_id:
+01JABC123...
+
+entity_id:
+light.living_room
 ```
 
-Cuando sea necesario conservar precisión elevada:
+El `internal_id` identifica inequívocamente el registro.
+
+El `entity_id` representa su identidad lógica funcional.
+
+---
+
+# 11. Entity ID
+
+La convención recomendada es:
 
 ```text
-2026-10-05T15:32:10.123Z
+domain.object
 ```
 
-Nunca se deberá interpretar un timestamp sin zona horaria.
-
----
-
-# 10. Objeto base
-
-Todos los objetos persistentes deberían compartir una estructura conceptual común.
-
-```json
-{
-  "id": "01J...",
-  "schema": "entity",
-  "schema_version": "1.0.0",
-  "created_at": "2026-10-05T15:00:00Z",
-  "updated_at": "2026-10-05T15:30:00Z",
-  "metadata": {}
-}
-```
-
----
-
-# 11. Metadata
-
-Los objetos pueden incorporar metadata no funcional.
-
-Ejemplo:
-
-```json
-{
-  "metadata": {
-    "manufacturer": "Example",
-    "model": "ABC-100",
-    "installation": "2026",
-    "location_note": "Entrada principal"
-  }
-}
-```
-
-La metadata no debe modificar el comportamiento principal del objeto.
-
----
-
-# 12. Extensiones
-
-Para permitir extensibilidad se recomienda reservar:
+Ejemplos:
 
 ```text
-x-*
+light.living_room
+switch.pool_pump
+sensor.living_temperature
+sensor.living_humidity
+binary_sensor.front_door
+cover.garage
+fan.bedroom
+climate.house
+alarm.house
 ```
-
-Ejemplo:
-
-```json
-{
-  "entity_id": "sensor.temperature.room",
-  "x-vendor": {
-    "custom_parameter": 123
-  }
-}
-```
-
-Las extensiones no deben romper clientes que no las conozcan.
 
 ---
 
-# 13. Site
+# 12. Reglas de Entity ID
 
-Un `Site` representa una instalación completa.
+Un `entity_id` deberá ser:
+
+* único dentro del Site;
+* estable;
+* independiente del hardware;
+* independiente del transporte;
+* reutilizable al reemplazar hardware;
+* adecuado para API e integraciones.
+
+No deberá depender de:
+
+```text
+GPIO
+IP
+MAC
+CAN ID
+Modbus address
+I2C address
+SPI CS
+```
+
+---
+
+# 13. Site Schema
+
+El `Site` representa una instalación.
 
 Ejemplo:
 
 ```json
 {
-  "site_id": "site.home",
+  "site_id": "site_home_001",
   "name": "Casa",
   "timezone": "America/Argentina/Buenos_Aires",
   "locale": "es-AR",
@@ -412,188 +348,212 @@ Ejemplo:
 }
 ```
 
-Campos mínimos:
+Campos recomendados:
 
-```text
-site_id
-name
-timezone
-locale
-units
-status
-```
-
-Estados:
-
-```text
-active
-disabled
-maintenance
-```
+| Campo      | Tipo   | Requerido |
+| ---------- | ------ | --------- |
+| `site_id`  | string | Sí        |
+| `name`     | string | Sí        |
+| `timezone` | string | Sí        |
+| `locale`   | string | No        |
+| `units`    | string | No        |
+| `status`   | enum   | Sí        |
+| `metadata` | object | No        |
 
 ---
 
-# 14. Zone
+# 14. Zone Schema
 
-Una zona representa una ubicación o sector lógico.
-
-Ejemplo:
+Una zona representa un espacio o sector físico/lógico.
 
 ```json
 {
-  "zone_id": "zone.living",
-  "site_id": "site.home",
-  "parent_zone_id": null,
+  "zone_id": "zone_living",
+  "site_id": "site_home_001",
   "name": "Living",
-  "type": "room",
+  "parent_zone_id": null,
   "status": "active"
 }
 ```
 
-Tipos posibles:
+Puede existir jerarquía:
 
 ```text
-house
-floor
-room
-corridor
-garage
-garden
-office
-workshop
-warehouse
-greenhouse
-field
-boat
-vehicle
-industrial_area
-custom
+Casa
+ ├── Planta Baja
+ │    ├── Living
+ │    └── Cocina
+ └── Planta Alta
+      └── Dormitorio
 ```
-
-El modelo debe permitir nuevas categorías.
 
 ---
 
-# 15. Group
+# 15. Group Schema
 
-Un grupo es una colección lógica.
+Un grupo es una agrupación lógica.
 
-Un grupo no necesariamente representa una ubicación.
-
-Ejemplo:
+No necesariamente representa ubicación física.
 
 ```json
 {
-  "group_id": "group.downstairs_lights",
-  "site_id": "site.home",
+  "group_id": "group_downstairs_lights",
   "name": "Luces planta baja",
   "entity_ids": [
-    "light.living.main",
-    "light.kitchen.main",
-    "light.hall.main"
+    "light.living_room",
+    "light.kitchen",
+    "light.hall"
   ]
 }
 ```
 
+Un grupo puede atravesar varias zonas.
+
 ---
 
-# 16. Device
+# 16. Device Schema
 
-Un `Device` representa un dispositivo físico o lógico.
-
-Ejemplo:
+Un Device representa hardware o un dispositivo lógico.
 
 ```json
 {
-  "device_id": "device.living.controller",
-  "site_id": "site.home",
-  "name": "Controlador Living",
-  "manufacturer": "Example",
-  "model": "ESP32-S3",
-  "firmware": {
-    "name": "AutomationNode",
-    "version": "1.0.0"
-  },
+  "device_id": "node_001",
+  "name": "Nodo Living",
+  "manufacturer": "Platform",
+  "model": "NODE_ETH_S3",
+  "hardware_profile": "NODE_ETH_S3_W5500_REV_A",
+  "firmware_version": "1.0.0",
   "status": "online"
 }
 ```
 
-Estados:
+---
+
+# 17. Device Schema completo
+
+```json
+{
+  "device_id": "01JABC...",
+  "name": "Nodo Living",
+  "description": "Controlador principal del living",
+
+  "manufacturer": "Platform",
+  "model": "NODE_ETH_S3",
+
+  "hardware_profile": "NODE_ETH_S3_W5500_REV_A",
+  "firmware_version": "1.0.0",
+  "hardware_revision": "A",
+
+  "zone_id": "zone_living",
+
+  "status": "online",
+
+  "capabilities": [
+    "ethernet",
+    "wifi",
+    "gpio",
+    "pwm",
+    "i2c"
+  ],
+
+  "created_at": "2026-10-06T12:00:00Z",
+  "updated_at": "2026-10-06T12:00:00Z"
+}
+```
+
+---
+
+# 18. Device Status
+
+Estados posibles:
 
 ```text
+provisioning
 online
 offline
 degraded
 maintenance
-unknown
+disabled
+unavailable
 ```
 
 ---
 
-# 17. Resource
+# 19. Resource Schema
 
-Un recurso representa una capacidad física o de comunicación del dispositivo.
+Un Resource representa un recurso físico disponible.
+
+Ejemplos:
+
+```text
+GPIO
+PWM
+ADC
+I2C
+SPI
+UART
+RS485
+CAN
+Ethernet
+Wi-Fi
+Storage
+Camera
+Display
+Touch
+```
 
 Ejemplo:
 
 ```json
 {
-  "resource_id": "resource.device_living.gpio12",
-  "device_id": "device.living.controller",
+  "resource_id": "gpio_23",
+  "device_id": "node_001",
   "type": "gpio",
+  "name": "GPIO23",
   "direction": "output",
-  "pin": 12,
   "status": "available"
 }
 ```
 
-Tipos:
-
-```text
-gpio
-pwm
-adc
-i2c
-spi
-uart
-rs485
-can
-ethernet
-wifi
-bluetooth
-zigbee
-thread
-matter
-relay
-sensor
-display
-touch
-camera
-storage
-audio
-```
-
-Los tipos deben ser extensibles.
-
 ---
 
-# 18. Capability
+# 20. Resource físico vs lógico
 
-Una capability describe qué puede hacer un recurso o entidad.
+El Resource puede tener propiedades físicas.
 
 Ejemplo:
 
 ```json
 {
-  "capability_id": "capability.light.on_off",
-  "type": "on_off",
-  "entity_id": "light.living.main",
-  "readable": true,
-  "writable": true
+  "resource_id": "gpio_23",
+  "type": "gpio",
+  "physical": {
+    "pin": 23
+  }
 }
 ```
 
-Tipos comunes:
+Esta información puede existir internamente, pero no debe ser necesaria para consumidores normales de la API.
+
+---
+
+# 21. Capability Schema
+
+Una Capability describe lo que un recurso o entidad puede hacer.
+
+Ejemplo:
+
+```json
+{
+  "capability_id": "brightness",
+  "type": "brightness",
+  "min": 0,
+  "max": 100,
+  "unit": "%"
+}
+```
+
+Ejemplos:
 
 ```text
 on_off
@@ -602,183 +562,239 @@ color
 temperature
 humidity
 pressure
-illuminance
-motion
-occupancy
 position
 speed
 power
 energy
-voltage
 current
+voltage
 flow
-co2
-pm25
-wind_speed
-wind_direction
-rain
+motion
+occupancy
 ```
 
 ---
 
-# 19. Entity
+# 22. Capability con límites
 
-La `Entity` es uno de los objetos centrales del sistema.
+```json
+{
+  "type": "temperature_setpoint",
+  "unit": "°C",
+  "min": 10,
+  "max": 35,
+  "step": 0.1
+}
+```
+
+Estos límites deben ser validados antes de ejecutar comandos.
+
+---
+
+# 23. Entity Schema
+
+La Entity es el objeto lógico utilizado por aplicaciones y automatizaciones.
 
 Ejemplo:
 
 ```json
 {
-  "entity_id": "light.living.main",
-  "device_id": "device.living.controller",
-  "zone_id": "zone.living",
+  "entity_id": "light.living_room",
+  "name": "Luz Living",
   "domain": "light",
-  "name": "Luz principal",
-  "device_class": "light",
+  "device_id": "node_001",
+  "zone_id": "zone_living",
+
   "capabilities": [
     "on_off",
     "brightness"
   ],
-  "state": {
-    "on": true,
-    "brightness": 75
-  },
-  "availability": "available"
+
+  "status": "available"
 }
 ```
 
 ---
 
-# 20. Domain
+# 24. Entity completa
 
-El `domain` determina el tipo funcional principal.
+```json
+{
+  "entity_id": "light.living_room",
 
-Ejemplos:
+  "internal_id": "01JABC...",
+
+  "name": "Luz Living",
+  "description": "Iluminación principal",
+
+  "domain": "light",
+
+  "device_id": "node_001",
+  "zone_id": "zone_living",
+
+  "capabilities": [
+    {
+      "type": "on_off"
+    },
+    {
+      "type": "brightness",
+      "min": 0,
+      "max": 100,
+      "unit": "%"
+    }
+  ],
+
+  "device_class": "light",
+
+  "status": "available",
+
+  "enabled": true,
+
+  "visible": true,
+
+  "created_at": "2026-10-06T12:00:00Z",
+  "updated_at": "2026-10-06T12:00:00Z"
+}
+```
+
+---
+
+# 25. Entity Domains
+
+Los dominios son extensibles.
+
+Ejemplos iniciales:
 
 ```text
 light
 switch
 fan
 cover
-lock
 sensor
 binary_sensor
 button
 climate
-alarm_control_panel
+lock
+alarm
 camera
 media_player
 vacuum
 water_valve
 energy_meter
 scene
-group
 number
 select
 text
-datetime
-timer
-counter
-input_boolean
-input_number
-virtual
 ```
 
-El sistema debe permitir nuevos domains.
+No debe existir una lista cerrada que impida agregar nuevos dominios.
 
 ---
 
-# 21. Device Class
-
-`device_class` permite especificar el significado físico.
-
-Ejemplos:
-
-```text
-temperature
-humidity
-pressure
-illuminance
-power
-energy
-voltage
-current
-motion
-door
-window
-smoke
-water_leak
-occupancy
-presence
-wind
-rain
-water_flow
-```
-
----
-
-# 22. Units
-
-Las unidades deben ser explícitas cuando correspondan.
-
-Ejemplos:
-
-```text
-temperature → °C
-pressure → Pa
-power → W
-energy → Wh
-voltage → V
-current → A
-flow → L/min
-distance → m
-speed → m/s
-```
-
-La plataforma deberá almacenar valores en unidades canónicas internas.
-
-Las interfaces pueden convertirlas para presentación.
-
-Ejemplo:
-
-```text
-Interno:
-20 °C
-
-UI:
-68 °F
-```
-
-El valor interno permanece:
-
-```text
-20 °C
-```
-
----
-
-# 23. State
-
-El estado representa una observación actual.
+# 26. Sensor Entity
 
 Ejemplo:
 
 ```json
 {
   "entity_id": "sensor.living.temperature",
-  "state": {
-    "value": 23.4,
-    "unit": "°C",
-    "timestamp": "2026-10-05T15:32:10Z",
-    "quality": "good",
-    "source": "device.living.controller"
-  }
+  "domain": "sensor",
+  "device_class": "temperature",
+  "unit": "°C",
+  "state_type": "numeric"
 }
 ```
 
 ---
 
-# 24. State Quality
+# 27. Binary Sensor
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "binary_sensor.front_door",
+  "domain": "binary_sensor",
+  "device_class": "door",
+  "state_type": "boolean"
+}
+```
+
+---
+
+# 28. Actuator Entity
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "switch.pool_pump",
+  "domain": "switch",
+  "capabilities": [
+    "on_off"
+  ]
+}
+```
+
+---
+
+# 29. State Schema
+
+El estado representa la condición actual conocida.
+
+Estructura recomendada:
+
+```json
+{
+  "entity_id": "sensor.living.temperature",
+
+  "state": {
+    "value": 24.5,
+    "unit": "°C"
+  },
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "quality": "good",
+
+  "source": "node_001"
+}
+```
+
+---
+
+# 30. State Metadata
+
+El estado puede incluir:
+
+```text
+timestamp
+source
+quality
+confidence
+sequence
+version
+```
+
+Ejemplo:
+
+```json
+{
+  "state": {
+    "value": 24.5,
+    "unit": "°C"
+  },
+  "timestamp": "2026-10-06T12:00:00Z",
+  "quality": "good",
+  "confidence": 0.98,
+  "source": "node_001",
+  "sequence": 1054
+}
+```
+
+---
+
+# 31. Quality
 
 Valores estándar:
 
@@ -790,125 +806,128 @@ invalid
 unavailable
 ```
 
-### good
+---
 
-Valor válido y actualizado.
+# 32. Unknown vs Unavailable
 
-### uncertain
+Se deben diferenciar.
 
-Valor disponible pero con alguna incertidumbre.
+### Unknown
 
-### stale
+El sistema todavía no conoce el valor.
 
-El valor es válido pero demasiado antiguo.
+```text
+value = null
+quality = unknown
+```
 
-### invalid
+### Unavailable
 
-El valor no es válido.
+El recurso normalmente existe, pero actualmente no está disponible.
 
-### unavailable
+```text
+value = null
+quality = unavailable
+```
 
-No existe actualmente una lectura válida.
+No deben tratarse como equivalentes.
 
 ---
 
-# 25. State Provenance
+# 33. Null
 
-Todo estado importante debería permitir conocer su origen.
+`null` deberá utilizarse únicamente cuando no exista un valor válido.
 
 Ejemplo:
 
 ```json
 {
-  "source": {
-    "device_id": "device.weather",
-    "resource_id": "resource.weather.i2c",
-    "method": "sensor"
-  }
+  "value": null,
+  "quality": "unavailable"
 }
 ```
 
-También puede indicar:
+No se deberá utilizar:
 
 ```text
-sensor
-calculated
-aggregated
-manual
-automation
-integration
-external
-ai
+0
+-1
+9999
 ```
+
+como sustitutos genéricos de valores desconocidos.
 
 ---
 
-# 26. Desired State vs Actual State
+# 34. Desired State
 
-Los actuadores deben distinguir entre:
-
-```text
-desired_state
-```
-
-y:
-
-```text
-actual_state
-```
-
-Ejemplo:
+Para actuadores se recomienda:
 
 ```json
 {
-  "desired_state": {
-    "on": true,
-    "brightness": 80
+  "desired": {
+    "power": true
   },
-  "actual_state": {
-    "on": false,
-    "brightness": 0
+
+  "actual": {
+    "power": false
   }
 }
 ```
 
-Esto permite detectar:
-
-* fallo del actuador;
-* pérdida de comunicación;
-* bloqueo;
-* discrepancia;
-* dispositivo apagado;
-* ejecución pendiente.
+Esto permite detectar una diferencia entre intención y realidad.
 
 ---
 
-# 27. Command
+# 35. Command Schema
 
-Un comando representa una solicitud para cambiar un estado o ejecutar una acción.
-
-Ejemplo:
+Un comando representa una acción.
 
 ```json
 {
-  "command_id": "cmd_01JXYZ",
-  "request_id": "req_01JXYZ",
-  "entity_id": "light.living.main",
-  "action": "turn_on",
+  "command_id": "01JCOMMAND...",
+  "entity_id": "light.living_room",
+  "command": "turn_on",
+  "parameters": {},
+  "request_id": "01JREQUEST..."
+}
+```
+
+---
+
+# 36. Command completo
+
+```json
+{
+  "command_id": "01JCOMMAND...",
+
+  "entity_id": "light.living_room",
+
+  "command": "set_brightness",
+
   "parameters": {
-    "brightness": 80
+    "brightness": 75
   },
-  "source": "web",
-  "priority": "normal",
-  "created_at": "2026-10-05T15:32:00Z"
+
+  "source": {
+    "type": "user",
+    "id": "01JUSER..."
+  },
+
+  "request_id": "01JREQUEST...",
+  "correlation_id": "01JCORRELATION...",
+
+  "created_at": "2026-10-06T12:00:00Z",
+
+  "idempotency_key": "abc123"
 }
 ```
 
 ---
 
-# 28. Command Lifecycle
+# 37. Command Status
 
-El estado de un comando puede ser:
+Estados:
 
 ```text
 requested
@@ -923,215 +942,105 @@ timeout
 cancelled
 ```
 
-Flujo:
-
-```text
-REQUESTED
-    ↓
-AUTHORIZED
-    ↓
-ACCEPTED
-    ↓
-QUEUED
-    ↓
-EXECUTING
-    ↓
-EXECUTED
-```
-
-Error:
-
-```text
-REQUESTED
-    ↓
-REJECTED
-```
-
-o:
-
-```text
-EXECUTING
-    ↓
-FAILED
-```
-
----
-
-# 29. Command Result
-
 Ejemplo:
 
 ```json
 {
-  "command_id": "cmd_01JXYZ",
+  "command_id": "01JCOMMAND...",
   "status": "executed",
-  "executed_at": "2026-10-05T15:32:01Z",
-  "result": {
-    "success": true
-  }
-}
-```
-
-En caso de error:
-
-```json
-{
-  "command_id": "cmd_01JXYZ",
-  "status": "failed",
-  "error": {
-    "code": "DEVICE_UNAVAILABLE",
-    "message": "Device is offline"
-  }
+  "completed_at": "2026-10-06T12:00:01Z"
 }
 ```
 
 ---
 
-# 30. Idempotencia
-
-Los comandos deben poder manejar reintentos.
-
-Se recomienda:
-
-```text
-Idempotency-Key
-```
-
-Ejemplo:
-
-```text
-Idempotency-Key: 01JXYZ...
-```
-
-Si un cliente reenvía exactamente el mismo comando debido a una pérdida de comunicación, el sistema no debe ejecutar accidentalmente la acción dos veces cuando esta sea no idempotente.
-
----
-
-# 31. Event
+# 38. Event Schema
 
 Un evento representa algo que ocurrió.
 
-Ejemplo:
+```json
+{
+  "event_id": "01JEVENT...",
+  "event_type": "motion_detected",
+  "entity_id": "binary_sensor.hall_motion",
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "source": "node_001",
+
+  "data": {}
+}
+```
+
+---
+
+# 39. Event con datos
 
 ```json
 {
-  "event_id": "evt_01JXYZ",
-  "type": "binary_sensor.state_changed",
-  "entity_id": "binary_sensor.front_door",
-  "timestamp": "2026-10-05T15:40:00Z",
+  "event_id": "01JEVENT...",
+
+  "event_type": "threshold_exceeded",
+
+  "entity_id": "sensor.greenhouse.temperature",
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
   "data": {
-    "previous": false,
-    "current": true
-  },
-  "source": "device.security"
-}
-```
-
-Un evento no reemplaza al estado.
-
-```text
-STATE
-    = situación actual
-
-EVENT
-    = algo que ocurrió
-```
-
----
-
-# 32. Event Correlation
-
-Los eventos relacionados deben poder agruparse mediante:
-
-```text
-correlation_id
-```
-
-Ejemplo:
-
-```json
-{
-  "event_id": "evt_01",
-  "correlation_id": "alarm_123",
-  "type": "motion.detected"
-}
-```
-
-Esto permite seguir una secuencia:
-
-```text
-Motion detected
-      ↓
-Automation triggered
-      ↓
-Light turned on
-      ↓
-Alarm notification
-      ↓
-User acknowledged
-```
-
----
-
-# 33. Function
-
-Una función representa una función lógica del sistema.
-
-Ejemplos:
-
-```text
-lighting
-heating
-cooling
-ventilation
-irrigation
-security
-access
-energy
-water
-climate
-alarm
-```
-
-Ejemplo:
-
-```json
-{
-  "function_id": "function.living.lighting",
-  "name": "Iluminación Living",
-  "zone_id": "zone.living",
-  "entity_ids": [
-    "light.living.main",
-    "light.living.ambient"
-  ]
+    "value": 31.5,
+    "threshold": 30.0,
+    "direction": "above"
+  }
 }
 ```
 
 ---
 
-# 34. Scene
+# 40. Event vs State
+
+Un evento:
+
+```text
+door_opened
+```
+
+indica:
+
+> La puerta se abrió.
+
+El estado:
+
+```text
+door = open
+```
+
+indica:
+
+> La puerta está abierta.
+
+Un evento puede producir un cambio de estado, pero ambos conceptos deben mantenerse separados.
+
+---
+
+# 41. Scene Schema
 
 Una escena representa un conjunto de estados deseados.
 
-Ejemplo:
-
 ```json
 {
-  "scene_id": "scene.movie",
-  "name": "Modo película",
+  "scene_id": "scene_night",
+  "name": "Noche",
+
   "actions": [
     {
-      "entity_id": "light.living.main",
-      "command": {
-        "action": "turn_on",
-        "brightness": 20
-      }
+      "entity_id": "light.living_room",
+      "command": "turn_off"
     },
     {
-      "entity_id": "light.living.ambient",
-      "command": {
-        "action": "turn_on",
-        "brightness": 10
+      "entity_id": "light.hall",
+      "command": "set_brightness",
+      "parameters": {
+        "brightness": 15
       }
     }
   ]
@@ -1140,15 +1049,35 @@ Ejemplo:
 
 ---
 
-# 35. Automation
+# 42. Scene Activation
 
-Una automatización está compuesta por:
+La activación de una escena produce comandos.
+
+```text
+Scene
+ ↓
+Validate
+ ↓
+Generate Commands
+ ↓
+System Bus
+ ↓
+Entities
+```
+
+Una escena no debe modificar directamente GPIO.
+
+---
+
+# 43. Automation Schema
+
+Una automatización se representa como:
 
 ```text
 Trigger
-    +
++
 Conditions
-    +
++
 Actions
 ```
 
@@ -1156,26 +1085,29 @@ Ejemplo:
 
 ```json
 {
-  "automation_id": "automation.hall.motion",
+  "automation_id": "automation_hall_light",
+
   "name": "Luz del pasillo",
+
   "enabled": true,
+
   "trigger": {
-    "type": "state_change",
-    "entity_id": "binary_sensor.hall.motion",
-    "to": true
+    "type": "event",
+    "event_type": "motion_detected",
+    "entity_id": "binary_sensor.hall_motion"
   },
+
   "conditions": [
     {
-      "type": "time_range",
-      "after": "22:00",
-      "before": "07:00"
+      "type": "time",
+      "after": "22:00"
     }
   ],
+
   "actions": [
     {
-      "type": "command",
       "entity_id": "light.hall",
-      "action": "turn_on",
+      "command": "set_brightness",
       "parameters": {
         "brightness": 20
       }
@@ -1186,9 +1118,9 @@ Ejemplo:
 
 ---
 
-# 36. Trigger
+# 44. Trigger Schema
 
-Tipos iniciales:
+Tipos de trigger:
 
 ```text
 event
@@ -1204,93 +1136,108 @@ device_event
 system_event
 ```
 
-Ejemplo:
+---
+
+# 45. Condition Schema
+
+Ejemplos:
 
 ```json
 {
-  "type": "threshold",
-  "entity_id": "sensor.greenhouse.temperature",
-  "operator": ">",
-  "value": 30
+  "type": "state",
+  "entity_id": "binary_sensor.front_door",
+  "operator": "eq",
+  "value": true
+}
+```
+
+Otro ejemplo:
+
+```json
+{
+  "type": "numeric",
+  "entity_id": "sensor.house.power",
+  "operator": "gt",
+  "value": 5000,
+  "unit": "W"
 }
 ```
 
 ---
 
-# 37. Condition
-
-Una condición determina si una automatización puede ejecutarse.
-
-Tipos:
-
-```text
-state
-comparison
-time_range
-day_of_week
-mode
-zone_state
-presence
-permission
-device_availability
-```
-
-Ejemplo:
+# 46. Action Schema
 
 ```json
 {
-  "type": "mode",
-  "mode": "sleep"
+  "entity_id": "light.living_room",
+  "command": "turn_on",
+  "parameters": {}
 }
 ```
 
----
-
-# 38. Action
-
-Una acción representa una operación.
-
-Tipos:
+Las acciones pueden ser:
 
 ```text
-command
-scene
+entity command
+scene activation
 notification
-event
+event emission
 delay
 condition
-automation
-webhook
-integration
+script
+automation trigger
+```
+
+---
+
+# 47. Function Schema
+
+Una Function representa una función lógica de mayor nivel.
+
+Ejemplos:
+
+```text
+lighting
+heating
+cooling
+irrigation
+security
+ventilation
+energy_management
+water_management
+climate_control
 ```
 
 Ejemplo:
 
 ```json
 {
-  "type": "command",
-  "entity_id": "fan.bedroom",
-  "action": "turn_on"
+  "function_id": "function_lighting_house",
+  "name": "Iluminación",
+  "type": "lighting",
+  "entity_ids": [
+    "light.living_room",
+    "light.kitchen",
+    "light.hall"
+  ]
 }
 ```
 
 ---
 
-# 39. System Mode
+# 48. Mode Schema
 
-Los modos globales deben representarse como datos.
-
-Ejemplo:
+Los modos permiten modificar el comportamiento general.
 
 ```json
 {
-  "mode": "sleep",
-  "site_id": "site.home",
-  "enabled": true
+  "mode_id": "sleep",
+  "name": "Dormir",
+  "active": true
 }
 ```
 
-Modos estándar:
+Ejemplos:
 
 ```text
 normal
@@ -1299,81 +1246,419 @@ away
 vacation
 maintenance
 emergency
-custom
 ```
-
-Las automatizaciones deben consultar el modo en lugar de implementar comportamientos específicos directamente en firmware.
 
 ---
 
-# 40. Error
-
-Todos los componentes deben utilizar una estructura común de errores.
+# 49. Mode State
 
 ```json
 {
-  "code": "ENTITY_NOT_FOUND",
-  "message": "Entity does not exist",
-  "details": {},
-  "request_id": "req_01JXYZ"
+  "system_mode": "sleep",
+  "changed_at": "2026-10-06T23:00:00Z",
+  "changed_by": "automation.sleep_schedule"
 }
-```
-
-Códigos recomendados:
-
-```text
-INVALID_REQUEST
-INVALID_PARAMETER
-UNAUTHORIZED
-FORBIDDEN
-NOT_FOUND
-CONFLICT
-TIMEOUT
-DEVICE_UNAVAILABLE
-RESOURCE_UNAVAILABLE
-ENTITY_UNAVAILABLE
-COMMAND_REJECTED
-COMMAND_FAILED
-SCHEMA_INVALID
-VERSION_UNSUPPORTED
-RATE_LIMITED
-INTERNAL_ERROR
 ```
 
 ---
 
-# 41. Availability
+# 50. Configuration Schema
 
-Los objetos deben diferenciar:
-
-```text
-enabled
-```
-
-de:
+La configuración debe diferenciarse del estado.
 
 ```text
-available
+CONFIGURATION
+    ≠
+STATE
 ```
 
 Ejemplo:
 
 ```json
 {
-  "enabled": true,
-  "availability": "unavailable"
+  "config_version": 15,
+
+  "configuration": {
+    "temperature_min": 20,
+    "temperature_max": 25
+  }
 }
 ```
 
-Esto significa:
+---
 
-> El usuario habilitó el objeto, pero actualmente no está disponible.
+# 51. Desired vs Applied Configuration
+
+La configuración distribuida puede tener:
+
+```json
+{
+  "desired_config_version": 15,
+  "applied_config_version": 14
+}
+```
+
+Esto indica:
+
+```text
+Central:
+version 15
+
+Node:
+version 14
+```
+
+El sistema deberá reconciliar posteriormente.
 
 ---
 
-# 42. Lifecycle
+# 52. Configuration Source
 
-Los objetos persistentes pueden utilizar:
+Puede indicar:
+
+```text
+user
+central
+node
+factory
+automation
+integration
+```
+
+Ejemplo:
+
+```json
+{
+  "source": {
+    "type": "central",
+    "id": "central_001"
+  }
+}
+```
+
+---
+
+# 53. Resource Configuration
+
+Los recursos físicos pueden tener configuración.
+
+Ejemplo:
+
+```json
+{
+  "resource_id": "gpio_23",
+
+  "type": "gpio",
+
+  "configuration": {
+    "direction": "output",
+    "inverted": false,
+    "safe_state": false
+  }
+}
+```
+
+Esta información pertenece a la configuración de hardware y no debe exponerse como abstracción principal a integraciones normales.
+
+---
+
+# 54. Sensor Configuration
+
+Ejemplo:
+
+```json
+{
+  "resource_id": "i2c_sensor_01",
+
+  "type": "sensor",
+
+  "configuration": {
+    "sensor_type": "AHT20",
+    "address": "0x38",
+    "sampling_interval_ms": 5000
+  }
+}
+```
+
+---
+
+# 55. Calibration Schema
+
+Los sensores pueden tener calibración.
+
+```json
+{
+  "calibration": {
+    "offset": 0.3,
+    "scale": 1.0,
+    "unit": "°C"
+  }
+}
+```
+
+Puede ampliarse:
+
+```json
+{
+  "calibration": {
+    "method": "linear",
+    "points": [
+      {
+        "raw": 100,
+        "reference": 20
+      },
+      {
+        "raw": 500,
+        "reference": 40
+      }
+    ]
+  }
+}
+```
+
+---
+
+# 56. Telemetry Schema
+
+```json
+{
+  "telemetry_id": "01JTEL...",
+  "entity_id": "sensor.house.power",
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "value": 1250.4,
+  "unit": "W",
+
+  "quality": "good",
+
+  "source": "node_energy_01"
+}
+```
+
+---
+
+# 57. Multi-value Telemetry
+
+Algunos sensores generan múltiples valores.
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "sensor.weather",
+
+  "values": {
+    "temperature": 24.5,
+    "humidity": 61.2,
+    "pressure": 1012.4
+  },
+
+  "units": {
+    "temperature": "°C",
+    "humidity": "%",
+    "pressure": "hPa"
+  }
+}
+```
+
+Sin embargo, cuando sea necesario utilizar cada valor independientemente en automatizaciones, se recomienda crear entidades separadas:
+
+```text
+sensor.weather.temperature
+sensor.weather.humidity
+sensor.weather.pressure
+```
+
+---
+
+# 58. Units
+
+Las unidades deberán ser explícitas cuando exista riesgo de ambigüedad.
+
+Unidades canónicas recomendadas:
+
+| Magnitud    | Unidad |
+| ----------- | ------ |
+| Temperatura | °C     |
+| Presión     | Pa     |
+| Humedad     | %      |
+| Tensión     | V      |
+| Corriente   | A      |
+| Potencia    | W      |
+| Energía     | Wh     |
+| Flujo       | L/min  |
+| Distancia   | m      |
+| Velocidad   | m/s    |
+| Ángulo      | °      |
+
+Las integraciones podrán convertir unidades para presentar información al usuario.
+
+---
+
+# 59. Canonical Units
+
+El sistema interno debe utilizar unidades canónicas.
+
+Por ejemplo:
+
+```text
+pressure = Pa
+```
+
+Aunque una UI muestre:
+
+```text
+hPa
+```
+
+o:
+
+```text
+mbar
+```
+
+---
+
+# 60. Enum
+
+Los valores enumerados deben utilizar strings estables.
+
+Ejemplo:
+
+```json
+{
+  "status": "online"
+}
+```
+
+No:
+
+```json
+{
+  "status": 1
+}
+```
+
+Los códigos numéricos dificultan interoperabilidad y debugging.
+
+---
+
+# 61. Extensibilidad de Enums
+
+Los consumidores deberán ignorar valores desconocidos cuando el contexto lo permita.
+
+Ejemplo:
+
+```text
+new_status
+```
+
+no debería provocar necesariamente un crash.
+
+---
+
+# 62. Metadata
+
+Los objetos podrán contener:
+
+```json
+{
+  "metadata": {
+    "manufacturer_serial": "ABC123",
+    "installation_date": "2026-10-01",
+    "notes": "Nodo instalado en tablero principal"
+  }
+}
+```
+
+La metadata no deberá ser necesaria para el funcionamiento básico.
+
+---
+
+# 63. Tags
+
+Los objetos pueden tener etiquetas:
+
+```json
+{
+  "tags": [
+    "critical",
+    "outdoor",
+    "energy"
+  ]
+}
+```
+
+Esto permite búsquedas y agrupaciones dinámicas.
+
+---
+
+# 64. Friendly Name
+
+La identidad técnica no debe confundirse con el nombre mostrado.
+
+```json
+{
+  "entity_id": "light.living_room",
+  "name": "Luz del Living"
+}
+```
+
+El `entity_id` permanece estable aunque cambie:
+
+```text
+name = "Luz principal"
+```
+
+---
+
+# 65. Localization
+
+Los nombres podrán localizarse.
+
+Ejemplo conceptual:
+
+```json
+{
+  "name": {
+    "default": "Living Light",
+    "es": "Luz del Living",
+    "it": "Luce del soggiorno"
+  }
+}
+```
+
+No obstante, para reducir complejidad en dispositivos pequeños, la localización completa puede quedar a cargo de Central/UI.
+
+---
+
+# 66. Visibility
+
+Una entidad podrá tener:
+
+```json
+{
+  "visible": true,
+  "exposed": true
+}
+```
+
+`visible` y `exposed` no significan necesariamente lo mismo.
+
+### Visible
+
+Aparece en la interfaz local.
+
+### Exposed
+
+Puede ser utilizada por una integración externa.
+
+---
+
+# 67. Entity Lifecycle
+
+Estados:
 
 ```text
 provisioning
@@ -1384,278 +1669,586 @@ deprecated
 removed
 ```
 
-Flujo típico:
+---
+
+# 68. Soft Delete
+
+Una entidad eliminada lógicamente no debería desaparecer inmediatamente de todo el historial.
+
+Puede pasar a:
 
 ```text
-PROVISIONING
-     ↓
-ACTIVE
-     ↓
-DISABLED
-     ↓
-REMOVED
+removed
 ```
+
+manteniendo sus registros históricos según las políticas de retención.
 
 ---
 
-# 43. Configuration vs State
+# 69. History Record
 
-La configuración y el estado no deben mezclarse.
-
-### Configuration
-
-Define cómo funciona un objeto.
+Un registro histórico puede tener:
 
 ```json
 {
-  "configuration": {
-    "sample_interval": 10,
-    "min_temperature": 18,
-    "max_temperature": 28
-  }
-}
-```
-
-### State
-
-Describe qué está ocurriendo.
-
-```json
-{
-  "state": {
-    "temperature": 23.4
-  }
+  "entity_id": "sensor.house.temperature",
+  "timestamp": "2026-10-06T12:00:00Z",
+  "value": 24.5,
+  "unit": "°C",
+  "quality": "good",
+  "source": "node_001"
 }
 ```
 
 ---
 
-# 44. Desired Configuration vs Applied Configuration
+# 70. History Metadata
 
-Los nodos deben poder distinguir:
+Puede incluir:
 
 ```text
-desired configuration
+sequence
+source
+quality
+confidence
+aggregation
+sample_interval
+```
+
+---
+
+# 71. Aggregated Data
+
+La plataforma podrá almacenar:
+
+```text
+raw
+average
+minimum
+maximum
+sum
+count
+```
+
+Ejemplo:
+
+```json
+{
+  "period": "1h",
+  "average": 24.3,
+  "minimum": 22.8,
+  "maximum": 26.1,
+  "count": 720
+}
+```
+
+---
+
+# 72. Error Schema
+
+Todos los servicios deberán utilizar un formato uniforme.
+
+```json
+{
+  "error": {
+    "code": "ENTITY_NOT_FOUND",
+    "message": "Entity does not exist",
+    "details": {},
+    "request_id": "01J..."
+  }
+}
+```
+
+---
+
+# 73. Error Codes
+
+Categorías:
+
+```text
+AUTH_
+DEVICE_
+ENTITY_
+COMMAND_
+CONFIG_
+TRANSPORT_
+BUS_
+VALIDATION_
+SYSTEM_
+```
+
+Ejemplos:
+
+```text
+ENTITY_NOT_FOUND
+ENTITY_UNAVAILABLE
+COMMAND_INVALID
+COMMAND_REJECTED
+DEVICE_OFFLINE
+TRANSPORT_TIMEOUT
+BUS_QUEUE_FULL
+CONFIG_INVALID
+AUTH_FORBIDDEN
+```
+
+---
+
+# 74. Error Details
+
+Los detalles deben ser estructurados.
+
+```json
+{
+  "error": {
+    "code": "VALUE_OUT_OF_RANGE",
+    "message": "Brightness is outside the allowed range",
+    "details": {
+      "field": "brightness",
+      "min": 0,
+      "max": 100,
+      "received": 150
+    }
+  }
+}
+```
+
+---
+
+# 75. Request Schema
+
+Las solicitudes deberán incluir:
+
+```text
+request_id
+timestamp
+source
+```
+
+cuando sea necesario.
+
+Ejemplo:
+
+```json
+{
+  "request_id": "01JREQUEST...",
+  "operation": "get_state",
+  "entity_id": "light.living_room"
+}
+```
+
+---
+
+# 76. Response Schema
+
+Respuesta estándar:
+
+```json
+{
+  "success": true,
+
+  "request_id": "01JREQUEST...",
+
+  "data": {}
+}
+```
+
+En caso de error:
+
+```json
+{
+  "success": false,
+
+  "request_id": "01JREQUEST...",
+
+  "error": {
+    "code": "ENTITY_NOT_FOUND",
+    "message": "Entity not found"
+  }
+}
+```
+
+---
+
+# 77. Bus Message Schema
+
+El System Bus utiliza una envoltura adicional.
+
+```json
+{
+  "message_id": "01JMESSAGE...",
+  "message_type": "command",
+  "schema_version": "1.0",
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "source": {
+    "device_id": "node_001"
+  },
+
+  "destination": {
+    "entity_id": "light.living_room"
+  },
+
+  "request_id": "01JREQUEST...",
+  "correlation_id": "01JCORRELATION...",
+
+  "priority": "normal",
+  "qos": "reliable",
+  "ttl": 10,
+
+  "payload": {}
+}
+```
+
+---
+
+# 78. Envelope vs Payload
+
+Se debe diferenciar:
+
+```text
+Envelope
 ```
 
 de:
 
 ```text
-applied configuration
+Payload
 ```
+
+### Envelope
+
+Información necesaria para transportar y enrutar.
+
+### Payload
+
+Información específica de la operación.
 
 Ejemplo:
-
-```json
-{
-  "configuration": {
-    "desired_version": 12,
-    "applied_version": 11
-  }
-}
-```
-
-Esto permite detectar:
 
 ```text
-Central:
-config v12
+Envelope
+├── message_id
+├── source
+├── destination
+├── priority
+└── qos
 
-Node:
-config v11
+Payload
+├── command
+└── parameters
 ```
-
-y comenzar una reconciliación.
 
 ---
 
-# 45. Configuration Version
-
-Toda configuración distribuida debe tener versión.
-
-Ejemplo:
+# 79. Command Payload
 
 ```json
 {
-  "config_version": 12
+  "command": "set_brightness",
+  "parameters": {
+    "brightness": 75
+  }
 }
 ```
 
-Una configuración debe poder compararse mediante:
+---
+
+# 80. Event Payload
+
+```json
+{
+  "event_type": "motion_detected",
+  "data": {
+    "confidence": 0.98
+  }
+}
+```
+
+---
+
+# 81. State Payload
+
+```json
+{
+  "state": {
+    "power": true,
+    "brightness": 75
+  }
+}
+```
+
+---
+
+# 82. Discovery Payload
+
+```json
+{
+  "operation": "announce",
+
+  "device": {
+    "device_id": "node_001",
+    "hardware_profile": "NODE_BASIC_C3_REV_A",
+    "firmware_version": "1.0.0"
+  }
+}
+```
+
+---
+
+# 83. Synchronization Schema
+
+La sincronización puede utilizar:
+
+```json
+{
+  "sync_id": "01JSYNC...",
+  "device_id": "node_001",
+
+  "configuration_version": 15,
+  "state_version": 104,
+
+  "changes": []
+}
+```
+
+---
+
+# 84. Configuration Patch
+
+Para evitar transferir toda la configuración:
+
+```json
+{
+  "operation": "replace",
+  "path": "/configuration/temperature_max",
+  "value": 26
+}
+```
+
+También:
 
 ```text
-version
-checksum
-hash
-timestamp
+add
+remove
+replace
+move
+copy
 ```
+
+si posteriormente se adopta un mecanismo compatible con JSON Patch.
 
 ---
 
-# 46. Sensor Data
+# 85. Schema Version
 
-Los sensores deberán utilizar un modelo común.
+Todos los objetos intercambiables importantes deberán poder identificar su versión.
 
 Ejemplo:
 
 ```json
 {
-  "entity_id": "sensor.weather.temperature",
-  "domain": "sensor",
-  "device_class": "temperature",
-  "state": {
-    "value": 24.7,
-    "unit": "°C",
-    "timestamp": "2026-10-05T15:30:00Z",
-    "quality": "good"
-  }
+  "schema_version": "1.0"
 }
 ```
 
----
-
-# 47. Binary Sensor
-
-Ejemplo:
-
-```json
-{
-  "entity_id": "binary_sensor.front_door",
-  "domain": "binary_sensor",
-  "device_class": "door",
-  "state": {
-    "value": true,
-    "timestamp": "2026-10-05T15:30:00Z"
-  }
-}
-```
-
----
-
-# 48. Energy
-
-Los medidores de energía deben poder representar:
+La versión debe ser independiente de:
 
 ```text
-voltage
-current
-power
-energy
-power_factor
-frequency
-```
-
-Ejemplo:
-
-```json
-{
-  "entity_id": "sensor.house.power",
-  "device_class": "power",
-  "state": {
-    "value": 1240.5,
-    "unit": "W",
-    "timestamp": "2026-10-05T15:30:00Z"
-  }
-}
+firmware_version
+API_version
+System Bus version
+hardware_revision
 ```
 
 ---
 
-# 49. Water
+# 86. Compatibility Rules
 
-El modelo debe permitir:
+Cambios compatibles:
 
 ```text
-water_flow
-water_volume
-pressure
-leak
-valve
-pump
+agregar campos opcionales
+agregar enum values
+agregar capacidades
 ```
 
-Ejemplo:
-
-```json
-{
-  "entity_id": "sensor.main_water_flow",
-  "device_class": "water_flow",
-  "state": {
-    "value": 8.2,
-    "unit": "L/min"
-  }
-}
-```
-
----
-
-# 50. Environmental
-
-Debe soportarse:
+Cambios potencialmente incompatibles:
 
 ```text
-temperature
-humidity
-pressure
-illuminance
-CO2
-PM1
-PM2.5
-PM10
-VOC
-wind
-rain
-UV
+eliminar campos
+cambiar significado
+cambiar tipos
+renombrar campos obligatorios
+cambiar unidades
 ```
 
-La incorporación de una nueva variable ambiental no debería requerir modificar el núcleo.
+Los cambios incompatibles requieren una nueva versión de esquema.
 
 ---
 
-# 51. AI / Computer Vision
+# 87. Schema Negotiation
 
-Las entidades generadas mediante IA deben conservar información de confianza.
-
-Ejemplo:
+Dos dispositivos pueden intercambiar:
 
 ```json
 {
-  "entity_id": "camera.garage.person_detection",
-  "domain": "binary_sensor",
-  "state": {
-    "value": true,
-    "confidence": 0.94,
-    "source": "ai"
-  }
-}
-```
-
-Para detecciones múltiples:
-
-```json
-{
-  "detections": [
-    {
-      "class": "person",
-      "confidence": 0.94,
-      "count": 2
-    },
-    {
-      "class": "vehicle",
-      "confidence": 0.87,
-      "count": 1
-    }
+  "supported_schema_versions": [
+    "1.0",
+    "1.1"
   ]
 }
 ```
 
-La IA debe comportarse como una fuente de datos/capabilities, no como una arquitectura paralela.
+El emisor deberá seleccionar una versión compatible.
 
 ---
 
-# 52. Virtual Entities
+# 88. Validation
 
-Una entidad no necesita estar asociada a hardware.
+Todo dato recibido deberá validarse.
+
+Validaciones mínimas:
+
+```text
+required fields
+type
+range
+enum
+format
+length
+relationships
+authorization
+```
+
+---
+
+# 89. Numeric Validation
+
+Ejemplo:
+
+```json
+{
+  "brightness": 75
+}
+```
+
+Debe validarse:
+
+```text
+type = number
+min = 0
+max = 100
+```
+
+---
+
+# 90. String Validation
+
+Los strings deberán poder limitar:
+
+```text
+length
+charset
+format
+```
+
+Ejemplo:
+
+```text
+entity_id
+```
+
+deberá seguir una convención conocida.
+
+---
+
+# 91. Security Classification
+
+Algunos datos podrán clasificarse:
+
+```text
+public
+internal
+sensitive
+restricted
+secret
+```
+
+Ejemplos:
+
+```text
+temperature → internal
+device diagnostics → internal
+API token → secret
+credentials → secret
+```
+
+Los secretos nunca deben viajar o almacenarse en texto plano sin protección adecuada.
+
+---
+
+# 92. Credentials
+
+Las credenciales deberán mantenerse separadas del modelo normal de entidades.
+
+Nunca:
+
+```json
+{
+  "device": {
+    "password": "..."
+  }
+}
+```
+
+en respuestas normales.
+
+Deberán utilizarse estructuras específicas y controles de acceso.
+
+---
+
+# 93. Secret References
+
+Cuando sea necesario referenciar un secreto:
+
+```json
+{
+  "credential_ref": "credential_001"
+}
+```
+
+y no:
+
+```json
+{
+  "password": "mypassword"
+}
+```
+
+---
+
+# 94. Provenance Schema
+
+Los datos podrán incluir origen:
+
+```json
+{
+  "provenance": {
+    "device_id": "node_001",
+    "module_id": "aht20_01",
+    "transport": "i2c"
+  }
+}
+```
+
+La información física puede mantenerse fuera de las respuestas normales.
+
+---
+
+# 95. Virtual Entity
+
+No todas las entidades tienen hardware directo.
 
 Ejemplo:
 
@@ -1663,49 +2256,64 @@ Ejemplo:
 {
   "entity_id": "sensor.house.average_temperature",
   "domain": "sensor",
-  "device_class": "temperature",
-  "source": "calculated"
+  "type": "virtual",
+  "source_entities": [
+    "sensor.living.temperature",
+    "sensor.kitchen.temperature"
+  ]
 }
 ```
 
-Puede derivarse de:
-
-```text
-sensores
-otras entidades
-automatizaciones
-IA
-integraciones externas
-datos históricos
-```
-
 ---
 
-# 53. Aggregated Entities
+# 96. Calculated Entity
 
 Ejemplo:
 
-```text
-sensor.house.total_power
+```json
+{
+  "entity_id": "sensor.house.total_power",
+  "domain": "sensor",
+  "type": "calculated",
+  "formula": "sum(power.*)"
+}
 ```
 
-puede representar:
-
-```text
-living power
-+
-kitchen power
-+
-garage power
-```
-
-El modelo debe permitir conservar la relación de origen.
+La fórmula podrá restringirse por seguridad.
 
 ---
 
-# 54. External Entities
+# 97. Aggregated Entity
 
-Las entidades externas deben poder representarse sin convertirlas necesariamente en dispositivos físicos.
+Ejemplo:
+
+```json
+{
+  "entity_id": "sensor.zone.temperature_average",
+  "domain": "sensor",
+  "type": "aggregated",
+  "source_entities": [
+    "sensor.room1.temperature",
+    "sensor.room2.temperature"
+  ],
+  "aggregation": "average"
+}
+```
+
+---
+
+# 98. External Entity
+
+Una entidad externa puede provenir de:
+
+```text
+Matter
+MQTT
+Home Assistant
+Weather Service
+Cloud API
+Modbus Gateway
+```
 
 Ejemplo:
 
@@ -1713,1283 +2321,310 @@ Ejemplo:
 {
   "entity_id": "weather.external.temperature",
   "domain": "sensor",
-  "source": "external",
-  "integration": "weather_service"
+  "type": "external",
+  "source": "weather_provider"
 }
 ```
 
 ---
 
-# 55. Dependencies
-
-Los objetos pueden declarar dependencias.
+# 99. Camera / AI Entity
 
 Ejemplo:
 
 ```json
 {
-  "entity_id": "fan.greenhouse",
-  "dependencies": [
-    "sensor.greenhouse.temperature",
-    "sensor.greenhouse.humidity"
+  "entity_id": "camera.front",
+  "domain": "camera",
+  "capabilities": [
+    "stream",
+    "snapshot",
+    "object_detection"
   ]
 }
 ```
 
-Esto permite:
-
-* diagnóstico;
-* propagación de disponibilidad;
-* análisis de fallos;
-* visualización de dependencias.
-
----
-
-# 56. Permissions
-
-Los objetos pueden declarar permisos o requerir scopes.
-
-Ejemplo:
+Una detección:
 
 ```json
 {
-  "permissions": {
-    "read": [
-      "entity:read"
-    ],
-    "write": [
-      "entity:control"
-    ]
-  }
-}
-```
-
-La autorización completa se define en:
-
-```text
-API-AUTHENTICATION-AUTHORIZATION.md
-```
-
----
-
-# 57. Visibility
-
-Las entidades pueden controlar dónde aparecen.
-
-```json
-{
-  "visibility": {
-    "web": true,
-    "mobile": true,
-    "matter": true,
-    "mqtt": true,
-    "third_party_api": false
-  }
-}
-```
-
-Esto permite que una entidad exista internamente sin ser necesariamente expuesta externamente.
-
----
-
-# 58. Tags
-
-Los objetos pueden tener etiquetas:
-
-```json
-{
-  "tags": [
-    "critical",
-    "energy",
-    "outdoor"
-  ]
-}
-```
-
-Las etiquetas pueden utilizarse para:
-
-* filtros;
-* automatizaciones;
-* permisos;
-* dashboards;
-* integraciones.
-
----
-
-# 59. History
-
-Los cambios de estado deben poder almacenarse como series temporales.
-
-Ejemplo:
-
-```json
-{
-  "entity_id": "sensor.living.temperature",
-  "timestamp": "2026-10-05T15:30:00Z",
-  "value": 23.4
-}
-```
-
-No todas las entidades necesitan almacenar histórico.
-
-La política debe ser configurable:
-
-```text
-disabled
-changes_only
-interval
-full
-```
-
----
-
-# 60. Telemetry
-
-Telemetry puede contener:
-
-```text
-CPU
-RAM
-flash
-temperature
-uptime
-Wi-Fi RSSI
-Ethernet link
-packet loss
-task health
-watchdog
-storage
-power consumption
-```
-
-Debe distinguirse de las entidades funcionales.
-
----
-
-# 61. Diagnostics
-
-Los dispositivos pueden generar diagnósticos:
-
-```json
-{
-  "device_id": "device.node01",
-  "diagnostics": {
-    "uptime": 123456,
-    "free_heap": 184320,
-    "cpu_load": 32,
-    "wifi_rssi": -54
+  "event_type": "object_detected",
+  "entity_id": "camera.front",
+  "data": {
+    "object": "person",
+    "confidence": 0.96
   }
 }
 ```
 
 ---
 
-# 62. API Response Envelope
-
-Las APIs pueden utilizar una envoltura estándar.
-
-Respuesta exitosa:
-
-```json
-{
-  "success": true,
-  "data": {},
-  "request_id": "req_01JXYZ"
-}
-```
-
-Error:
-
-```json
-{
-  "success": false,
-  "error": {
-    "code": "ENTITY_NOT_FOUND",
-    "message": "Entity not found"
-  },
-  "request_id": "req_01JXYZ"
-}
-```
-
-Para listas:
-
-```json
-{
-  "success": true,
-  "data": [],
-  "pagination": {
-    "page": 1,
-    "page_size": 50,
-    "total": 120
-  },
-  "request_id": "req_01JXYZ"
-}
-```
-
----
-
-# 63. Pagination
-
-Las APIs que devuelvan colecciones deben soportar paginación.
-
-Campos recomendados:
-
-```text
-page
-page_size
-total
-next
-previous
-```
-
-Para grandes instalaciones se recomienda cursor pagination:
-
-```json
-{
-  "next_cursor": "eyJ..."
-}
-```
-
----
-
-# 64. Filtering
-
-Los recursos deberán permitir filtros.
-
-Ejemplos conceptuales:
-
-```text
-?zone_id=zone.living
-?domain=light
-?availability=available
-?tag=critical
-```
-
-Los filtros específicos pertenecen a `API-SPECIFICATION.md`.
-
----
-
-# 65. Sorting
-
-Las colecciones podrán ordenar por:
-
-```text
-name
-created_at
-updated_at
-timestamp
-priority
-```
-
----
-
-# 66. Optimistic Concurrency
-
-Los objetos modificables deberían soportar control de concurrencia.
-
-Ejemplo:
-
-```text
-version: 17
-```
-
-Cliente:
-
-```text
-PATCH entity
-If-Version: 17
-```
-
-Si el objeto ya está en:
-
-```text
-version: 18
-```
-
-el servidor debe devolver:
-
-```text
-CONFLICT
-```
-
-Esto evita sobrescribir cambios realizados por otro administrador.
-
----
-
-# 67. ETag
-
-Las APIs HTTP podrán utilizar:
-
-```text
-ETag
-```
-
-para:
-
-* cache;
-* sincronización;
-* control de cambios;
-* reducción de tráfico.
-
----
-
-# 68. Null, Unknown y Unavailable
-
-Estos conceptos no deben confundirse.
-
-### `null`
-
-El valor explícitamente no existe.
-
-### `unknown`
-
-El sistema no conoce el valor.
-
-### `unavailable`
-
-El recurso no está actualmente disponible.
+# 100. Energy Entity
 
 Ejemplo:
 
 ```json
 {
-  "value": null,
-  "quality": "unavailable"
+  "entity_id": "sensor.house.power",
+  "domain": "sensor",
+  "device_class": "power",
+  "unit": "W"
 }
+```
+
+También:
+
+```text
+sensor.house.energy
+sensor.house.voltage
+sensor.house.current
 ```
 
 ---
 
-# 69. Boolean States
-
-Los booleanos deben evitar representar simultáneamente múltiples estados.
-
-Incorrecto:
-
-```json
-{
-  "value": false
-}
-```
-
-cuando no se sabe si:
-
-```text
-OFF
-```
-
-o:
-
-```text
-UNKNOWN
-```
-
-La condición debe acompañarse con:
-
-```json
-{
-  "value": false,
-  "quality": "good"
-}
-```
-
-o:
-
-```json
-{
-  "value": null,
-  "quality": "unavailable"
-}
-```
-
----
-
-# 70. Numeric Validation
-
-Los valores numéricos deben poder definir:
-
-```text
-minimum
-maximum
-step
-precision
-unit
-```
+# 101. Water Entity
 
 Ejemplo:
 
 ```json
 {
-  "capability": {
-    "type": "brightness",
-    "minimum": 0,
-    "maximum": 100,
-    "step": 1,
-    "unit": "%"
-  }
+  "entity_id": "sensor.irrigation.flow",
+  "domain": "sensor",
+  "device_class": "flow",
+  "unit": "L/min"
 }
 ```
 
-Los límites de seguridad deben prevalecer sobre los límites de interfaz.
-
 ---
 
-# 71. Safety Limits
-
-Un actuador puede tener:
-
-```json
-{
-  "limits": {
-    "minimum": 0,
-    "maximum": 100,
-    "safe_minimum": 10,
-    "safe_maximum": 80
-  }
-}
-```
-
-El sistema debe impedir comandos fuera de los límites de seguridad aunque la API los acepte sintácticamente.
-
----
-
-# 72. Priority
-
-Los mensajes y comandos pueden tener prioridad.
-
-Valores iniciales:
-
-```text
-emergency
-critical
-high
-normal
-low
-background
-```
-
-Orden:
-
-```text
-emergency
-    ↓
-critical
-    ↓
-high
-    ↓
-normal
-    ↓
-low
-    ↓
-background
-```
-
----
-
-# 73. Source
-
-Toda operación importante debe poder identificar su origen.
+# 102. Environmental Entity
 
 Ejemplos:
 
 ```text
-local
-web
-mobile
-automation
-central
-zone
-integration
-mqtt
-matter
-api
+sensor.temperature
+sensor.humidity
+sensor.pressure
+sensor.co2
+sensor.pm25
+sensor.illuminance
+sensor.wind_speed
+sensor.wind_direction
+sensor.rain
+```
+
+---
+
+# 103. Industrial Entity
+
+Ejemplos:
+
+```text
+sensor.motor.temperature
+sensor.motor.rpm
+sensor.pump.pressure
+sensor.line.flow
+valve.main
+alarm.machine
+```
+
+---
+
+# 104. Marine Entity
+
+Ejemplos:
+
+```text
+sensor.engine.rpm
+sensor.battery.voltage
+sensor.battery.current
+sensor.tank.level
+binary_sensor.bilge
+alarm.engine
+```
+
+---
+
+# 105. State Version
+
+Los estados pueden utilizar un contador:
+
+```json
+{
+  "state_version": 1054
+}
+```
+
+Esto ayuda a detectar estados antiguos.
+
+---
+
+# 106. Sequence
+
+Los mensajes de alta frecuencia pueden utilizar:
+
+```json
+{
+  "sequence": 1054
+}
+```
+
+Esto permite detectar:
+
+```text
+missing
+duplicate
+out_of_order
+```
+
+---
+
+# 107. Ordering
+
+No todos los mensajes requieren orden global.
+
+El orden deberá definirse por:
+
+```text
+entity
 device
-ai
-system
+stream
+correlation_id
+```
+
+Esto evita exigir una secuencia global innecesaria en toda la instalación.
+
+---
+
+# 108. Clock Independence
+
+El sistema no deberá depender exclusivamente de sincronización horaria para determinar orden.
+
+Se recomienda combinar:
+
+```text
+timestamp
+sequence
+boot_id
+```
+
+Especialmente durante:
+
+```text
+NTP unavailable
+device reboot
+network outage
 ```
 
 ---
 
-# 74. Request Context
+# 109. Boot ID
 
-Las operaciones distribuidas pueden contener:
+Cada arranque puede generar:
 
 ```json
 {
-  "request_id": "req_01",
-  "correlation_id": "corr_01",
-  "source": "web",
-  "user_id": "user_01"
+  "boot_id": "01JBOOT..."
 }
 ```
 
-Esto permite rastrear una operación desde:
+Esto permite distinguir:
 
 ```text
-Usuario
- ↓
-Web
- ↓
-Central
- ↓
-Zone Controller
- ↓
-Node
- ↓
-Actuator
+sequence 1
 ```
+
+de diferentes reinicios.
 
 ---
 
-# 75. Discovery
+# 110. Message Identity
 
-El proceso de descubrimiento debe utilizar objetos compatibles con este modelo.
-
-Ejemplo:
-
-```json
-{
-  "device_id": "device.node01",
-  "capabilities": [
-    "gpio",
-    "wifi",
-    "temperature_sensor"
-  ],
-  "firmware": {
-    "name": "AutomationNode",
-    "version": "1.0.0"
-  }
-}
-```
-
-La detección de hardware debe producir Resources y Capabilities que posteriormente pueden convertirse en Entities.
-
----
-
-# 76. Schema Validation
-
-Los datos recibidos desde:
-
-* dispositivos;
-* API;
-* System Bus;
-* integraciones;
-* archivos;
-* plugins;
-
-deben validarse antes de incorporarse al modelo interno.
-
-Flujo:
+La identidad completa de un mensaje puede interpretarse como:
 
 ```text
-Input
-  ↓
-Syntax validation
-  ↓
-Schema validation
-  ↓
-Semantic validation
-  ↓
-Permission validation
-  ↓
-Safety validation
-  ↓
-Accept
-```
-
----
-
-# 77. Semantic Validation
-
-Un JSON puede ser estructuralmente válido y aun así ser inválido.
-
-Ejemplo:
-
-```json
-{
-  "unit": "°C",
-  "value": 9999
-}
-```
-
-Puede cumplir JSON Schema pero superar el rango físico permitido.
-
-Por eso deben existir dos niveles:
-
-```text
-Schema validation
+boot_id
 +
-Domain validation
+message_id
+```
+
+o simplemente mediante un ID global suficientemente robusto.
+
+---
+
+# 111. API Compatibility
+
+La API deberá reutilizar estos mismos esquemas.
+
+Por ejemplo:
+
+```text
+GET /entities/light.living_room
+```
+
+deberá devolver el mismo modelo conceptual utilizado internamente.
+
+No deberá existir:
+
+```text
+API Entity Model
+```
+
+completamente diferente del:
+
+```text
+Internal Entity Model
 ```
 
 ---
 
-# 78. Schema Compatibility
+# 112. System Bus Compatibility
 
-Los clientes deben tolerar campos desconocidos cuando sea posible.
+De igual manera:
 
-Regla:
+```text
+System Bus
+```
 
-> Agregar un campo opcional no debe romper clientes existentes.
-
-Los cambios incompatibles requieren incremento de `MAJOR`.
-
----
-
-# 79. Backward Compatibility
+deberá transportar estos objetos o representaciones equivalentes.
 
 Ejemplo:
 
 ```text
-1.0.0
-```
-
-puede recibir:
-
-```text
-1.1.0
-```
-
-si solamente agrega campos opcionales.
-
-No necesariamente puede interpretar:
-
-```text
-2.0.0
-```
-
-sin negociación o actualización.
-
----
-
-# 80. Forward Compatibility
-
-Los nodos antiguos deberían ignorar campos que no necesitan cuando sea seguro hacerlo.
-
-Ejemplo:
-
-```json
-{
-  "state": {
-    "value": 22.4,
-    "unit": "°C",
-    "confidence": 0.98
-  }
-}
-```
-
-Un nodo que no conozca:
-
-```text
-confidence
-```
-
-puede ignorarlo si no afecta a la seguridad.
-
----
-
-# 81. Schema Negotiation
-
-Los dispositivos pueden anunciar:
-
-```json
-{
-  "supported_schemas": {
-    "entity": "1.x",
-    "command": "1.x",
-    "event": "1.x"
-  }
-}
-```
-
-Esto permitirá compatibilidad entre versiones.
-
----
-
-# 82. Embedded / ESP32 Considerations
-
-El modelo conceptual es amplio, pero un ESP32 no debe cargar necesariamente todos los esquemas.
-
-Se recomienda separar:
-
-```text
-Full Schema
-```
-
-de:
-
-```text
-Embedded Schema
-```
-
-Ejemplo:
-
-```text
-Central
-→ modelo completo
-
-ESP32-S3
-→ modelo completo/reducido
-
-ESP32-C3
-→ modelo reducido
-
-Sensor Node
-→ solamente modelos necesarios
-```
-
----
-
-# 83. Memory Optimization
-
-En dispositivos pequeños:
-
-* evitar strings repetidos;
-* utilizar IDs compactos internamente;
-* utilizar enums;
-* utilizar CBOR/MessagePack cuando sea conveniente;
-* reutilizar buffers;
-* evitar duplicar estados;
-* limitar metadata.
-
-La representación externa puede seguir siendo JSON.
-
----
-
-# 84. Schema IDs
-
-Cada esquema formal deberá poseer un `$id`.
-
-Ejemplo:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.example.local/entity/v1/entity.json"
-}
-```
-
-La URL definitiva del proyecto podrá cambiarse posteriormente.
-
----
-
-# 85. `$defs`
-
-Los elementos reutilizables deben declararse en `$defs`.
-
-Ejemplo:
-
-```json
-{
-  "$defs": {
-    "EntityId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "Timestamp": {
-      "type": "string",
-      "format": "date-time"
-    }
-  }
-}
-```
-
-Esto evita duplicar reglas.
-
----
-
-# 86. Ejemplo de Schema Formal
-
-Ejemplo conceptual para una Entity:
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.example.local/entity/v1/entity.json",
-  "title": "Entity",
-  "type": "object",
-  "required": [
-    "entity_id",
-    "domain",
-    "name"
-  ],
-  "properties": {
-    "entity_id": {
-      "type": "string"
-    },
-    "domain": {
-      "type": "string"
-    },
-    "name": {
-      "type": "string"
-    },
-    "device_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "zone_id": {
-      "type": [
-        "string",
-        "null"
-      ]
-    }
-  },
-  "additionalProperties": true
-}
-```
-
-Este ejemplo es ilustrativo.
-
-Los esquemas definitivos se almacenarán en:
-
-```text
-/schemas/
-```
-
----
-
-# 87. `additionalProperties`
-
-La política dependerá del nivel del objeto.
-
-Para objetos críticos se recomienda:
-
-```text
-additionalProperties: false
-```
-
-cuando el esquema esté completamente definido.
-
-Para objetos extensibles se podrá utilizar:
-
-```text
-additionalProperties: true
-```
-
-o un esquema específico de extensiones.
-
-La compatibilidad debe ser evaluada antes de restringir campos adicionales.
-
----
-
-# 88. Vendor Extensions
-
-Las extensiones propietarias deben utilizar:
-
-```text
-x-
-```
-
-Ejemplo:
-
-```json
-{
-  "x-esp32": {
-    "cpu_frequency": 240,
-    "psram": true
-  }
-}
-```
-
-Ejemplo de integración:
-
-```json
-{
-  "x-matter": {
-    "endpoint": 12
-  }
-}
-```
-
-Estas extensiones no deben convertirse en requisitos del modelo central.
-
----
-
-# 89. Hardware-Specific Data
-
-Los detalles físicos pertenecen a Resource/Device.
-
-Ejemplo:
-
-```json
-{
-  "resource_id": "resource.node01.gpio12",
-  "type": "gpio",
-  "hardware": {
-    "pin": 12,
-    "mode": "output",
-    "active_level": "high"
-  }
-}
-```
-
-Nunca deben aparecer como requisito de una Entity lógica:
-
-```text
-light.living.main
-```
-
----
-
-# 90. Transport-Specific Data
-
-Datos como:
-
-```text
-MQTT topic
-CAN ID
-RS485 address
-Modbus register
-Matter endpoint
-IP address
-MAC address
-```
-
-pertenecen a adaptadores de transporte/integración.
-
-Ejemplo:
-
-```json
-{
-  "integration": {
-    "type": "mqtt",
-    "topic": "home/living/light/main"
-  }
-}
-```
-
-El Entity ID continúa siendo:
-
-```text
-light.living.main
-```
-
----
-
-# 91. System Bus Messages
-
-Los mensajes del System Bus utilizarán una estructura común.
-
-Ejemplo:
-
-```json
-{
-  "message_id": "msg_01JXYZ",
-  "message_type": "command",
-  "timestamp": "2026-10-05T15:30:00Z",
-  "source": "device.node01",
-  "destination": "entity.light.living",
-  "priority": "normal",
-  "payload": {}
-}
-```
-
-El modelo completo será definido en:
-
-```text
-SYSTEM-BUS.md
-```
-
----
-
-# 92. Integration Mapping
-
-Las integraciones externas no deben crear un modelo paralelo.
-
-Ejemplo:
-
-```text
-Internal Entity
+Command Schema
       ↓
-Integration Adapter
+Bus Envelope
       ↓
-Matter Device
-```
-
-o:
-
-```text
-Internal Entity
-      ↓
-MQTT Adapter
-      ↓
-MQTT Topic
-```
-
-o:
-
-```text
-Internal Entity
-      ↓
-Home Assistant Adapter
-      ↓
-HA Entity
+Transport
 ```
 
 ---
 
-# 93. API Mapping
+# 113. Integration Mapping
 
-La API debe exponer directamente los conceptos del Data Model.
-
-Ejemplo:
+Las integraciones externas deberán actuar como adaptadores.
 
 ```text
-GET /api/v1/entities
-GET /api/v1/entities/{entity_id}
-GET /api/v1/entities/{entity_id}/state
-POST /api/v1/entities/{entity_id}/commands
+Canonical Entity
+       │
+       ├── Matter mapping
+       ├── MQTT mapping
+       ├── Home Assistant mapping
+       ├── REST mapping
+       └── Other mapping
 ```
 
-No:
-
-```text
-GET /api/gpio/12
-```
-
-salvo APIs específicamente destinadas a diagnóstico/hardware.
+Nunca se deberá modificar el modelo interno para adaptarlo a una integración concreta.
 
 ---
 
-# 94. Security
-
-Los datos pueden clasificarse.
-
-Niveles sugeridos:
-
-```text
-public
-internal
-sensitive
-critical
-```
-
-Ejemplo:
+# 114. Example — Light
 
 ```json
 {
-  "data_classification": "critical"
-}
-```
-
-Los datos críticos pueden incluir:
-
-* alarmas;
-* cerraduras;
-* acceso;
-* seguridad;
-* configuración;
-* credenciales;
-* infraestructura.
-
-Las credenciales y secretos nunca deben almacenarse en texto plano dentro de entidades.
-
----
-
-# 95. Secrets
-
-Los siguientes datos nunca deben aparecer directamente en respuestas normales:
-
-```text
-password
-API key
-private key
-access token
-refresh token
-Wi-Fi password
-MQTT password
-certificate private key
-```
-
-Deben utilizar referencias seguras:
-
-```json
-{
-  "credential_ref": "credential.mqtt.main"
-}
-```
-
----
-
-# 96. Audit Information
-
-Las operaciones administrativas importantes deben poder registrar:
-
-```json
-{
-  "audit": {
-    "user_id": "user_01",
-    "source": "web",
-    "timestamp": "2026-10-05T15:30:00Z",
-    "action": "entity.configuration.updated"
-  }
-}
-```
-
----
-
-# 97. Data Retention
-
-Cada tipo de información puede tener una política distinta.
-
-Ejemplo:
-
-```text
-Realtime state
-→ memoria
-
-History
-→ días/meses
-
-Audit
-→ meses/años
-
-Diagnostics
-→ período corto
-
-Events
-→ configurable
-```
-
-La política concreta pertenece a:
-
-```text
-DATABASE-STORAGE.md
-```
-
----
-
-# 98. Offline Operation
-
-Los esquemas deben funcionar sin Central.
-
-Un Node debe poder almacenar localmente:
-
-```text
-configuration
-critical state
-required automations
-local entities
-pending events
-```
-
-La ausencia de Central no debe invalidar el modelo.
-
----
-
-# 99. Synchronization
-
-Cuando un Node vuelva a conectarse:
-
-```text
-Node
- ↓
-Identity
- ↓
-Schema negotiation
- ↓
-Configuration version
- ↓
-State synchronization
- ↓
-Pending events
- ↓
-Health
- ↓
-Operational
-```
-
-La sincronización debe respetar:
-
-```text
-local safety
->
-local automation
->
-zone
->
-central
->
-external
-```
-
----
-
-# 100. State Authority
-
-Cuando existan múltiples fuentes, debe definirse quién tiene autoridad.
-
-Ejemplo:
-
-```text
-Local safety
-    ↓
-Local automation
-    ↓
-Zone controller
-    ↓
-Central
-    ↓
-Integration
-```
-
-Una integración externa nunca debe sobrescribir silenciosamente una condición de seguridad local.
-
----
-
-# 101. Conflict Resolution
-
-Cuando existan órdenes simultáneas:
-
-```text
-User
-Automation
-Central
-Zone
-Safety
-Integration
-```
-
-debe existir una política de prioridad.
-
-Ejemplo:
-
-```text
-EMERGENCY
-    >
-SAFETY
-    >
-LOCAL AUTOMATION
-    >
-ZONE
-    >
-CENTRAL
-    >
-USER
-    >
-INTEGRATION
-```
-
-La política final deberá definirse en `SYSTEM-BUS.md` y en la arquitectura de automatizaciones.
-
----
-
-# 102. Example — Complete Entity
-
-```json
-{
-  "entity_id": "light.living.main",
-  "schema": "entity",
-  "schema_version": "1.0.0",
-
-  "device_id": "device.living.controller",
-  "zone_id": "zone.living",
+  "entity_id": "light.living_room",
 
   "domain": "light",
-  "device_class": "light",
-  "name": "Luz principal",
 
   "capabilities": [
     "on_off",
@@ -2997,509 +2632,1875 @@ La política final deberá definirse en `SYSTEM-BUS.md` y en la arquitectura de 
   ],
 
   "state": {
-    "on": true,
-    "brightness": 75,
-    "timestamp": "2026-10-05T15:32:10Z",
-    "quality": "good",
-    "source": "device.living.controller"
-  },
-
-  "availability": "available",
-
-  "visibility": {
-    "web": true,
-    "mobile": true,
-    "matter": true,
-    "mqtt": true,
-    "third_party_api": true
-  },
-
-  "tags": [
-    "lighting",
-    "living"
-  ],
-
-  "status": "active",
-
-  "created_at": "2026-10-01T12:00:00Z",
-  "updated_at": "2026-10-05T15:32:10Z"
-}
-```
-
----
-
-# 103. Example — Complete Sensor
-
-```json
-{
-  "entity_id": "sensor.living.temperature",
-  "schema": "entity",
-  "schema_version": "1.0.0",
-
-  "device_id": "device.living.controller",
-  "zone_id": "zone.living",
-
-  "domain": "sensor",
-  "device_class": "temperature",
-  "name": "Temperatura Living",
-
-  "capabilities": [
-    "temperature"
-  ],
-
-  "state": {
-    "value": 23.4,
-    "unit": "°C",
-    "timestamp": "2026-10-05T15:32:10Z",
-    "quality": "good",
-    "source": "sensor"
-  },
-
-  "availability": "available",
-
-  "status": "active"
-}
-```
-
----
-
-# 104. Example — Complete Command
-
-```json
-{
-  "command_id": "cmd_01JXYZ",
-  "request_id": "req_01JXYZ",
-  "correlation_id": "corr_01JXYZ",
-
-  "entity_id": "light.living.main",
-
-  "action": "turn_on",
-
-  "parameters": {
-    "brightness": 80
-  },
-
-  "source": "web",
-  "priority": "normal",
-
-  "created_at": "2026-10-05T15:40:00Z"
-}
-```
-
----
-
-# 105. Example — Complete Event
-
-```json
-{
-  "event_id": "evt_01JXYZ",
-  "schema": "event",
-  "schema_version": "1.0.0",
-
-  "type": "entity.state_changed",
-
-  "entity_id": "binary_sensor.front_door",
-
-  "timestamp": "2026-10-05T15:42:00Z",
-
-  "source": "device.security",
-
-  "correlation_id": "corr_01JXYZ",
-
-  "data": {
-    "previous": false,
-    "current": true
+    "power": true,
+    "brightness": 75
   }
 }
 ```
 
 ---
 
-# 106. Example — Complete Automation
+# 115. Example — Temperature
 
 ```json
 {
-  "automation_id": "automation.hall.night_light",
-  "schema": "automation",
-  "schema_version": "1.0.0",
+  "entity_id": "sensor.living.temperature",
 
-  "name": "Luz nocturna del pasillo",
-  "enabled": true,
+  "domain": "sensor",
 
-  "trigger": {
-    "type": "state_change",
-    "entity_id": "binary_sensor.hall.motion",
-    "to": true
+  "device_class": "temperature",
+
+  "state": {
+    "value": 24.5,
+    "unit": "°C"
   },
 
-  "conditions": [
-    {
-      "type": "mode",
-      "mode": "sleep"
-    }
+  "quality": "good"
+}
+```
+
+---
+
+# 116. Example — Door
+
+```json
+{
+  "entity_id": "binary_sensor.front_door",
+
+  "domain": "binary_sensor",
+
+  "device_class": "door",
+
+  "state": {
+    "value": "open"
+  }
+}
+```
+
+---
+
+# 117. Example — Motor
+
+```json
+{
+  "entity_id": "motor.pool_pump",
+
+  "domain": "motor",
+
+  "capabilities": [
+    "on_off",
+    "speed"
   ],
 
-  "actions": [
-    {
-      "type": "command",
-      "entity_id": "light.hall",
-      "action": "turn_on",
-      "parameters": {
-        "brightness": 15
-      }
-    }
+  "state": {
+    "power": true,
+    "speed": 1800,
+    "speed_unit": "rpm"
+  }
+}
+```
+
+---
+
+# 118. Example — Climate
+
+```json
+{
+  "entity_id": "climate.house",
+
+  "domain": "climate",
+
+  "capabilities": [
+    "temperature",
+    "setpoint",
+    "mode"
+  ],
+
+  "state": {
+    "temperature": 24.2,
+    "setpoint": 22,
+    "mode": "cool"
+  }
+}
+```
+
+---
+
+# 119. Example — Water Valve
+
+```json
+{
+  "entity_id": "water_valve.irrigation",
+
+  "domain": "water_valve",
+
+  "capabilities": [
+    "open_close",
+    "position"
+  ],
+
+  "state": {
+    "position": 100
+  }
+}
+```
+
+---
+
+# 120. Example — Alarm
+
+```json
+{
+  "entity_id": "alarm.house",
+
+  "domain": "alarm",
+
+  "state": {
+    "status": "armed_away"
+  }
+}
+```
+
+---
+
+# 121. System Snapshot
+
+Central podrá solicitar un snapshot:
+
+```json
+{
+  "snapshot_id": "01JSNAPSHOT...",
+  "site_id": "site_home_001",
+
+  "timestamp": "2026-10-06T12:00:00Z",
+
+  "devices": [],
+  "entities": [],
+  "zones": [],
+  "groups": [],
+  "modes": []
+}
+```
+
+---
+
+# 122. Snapshot Use Cases
+
+Los snapshots pueden utilizarse para:
+
+* sincronización;
+* backup;
+* diagnóstico;
+* restauración;
+* onboarding;
+* migración;
+* comparación de configuración.
+
+---
+
+# 123. Delta Synchronization
+
+Para instalaciones grandes no se recomienda transferir todo el sistema constantemente.
+
+Se podrá utilizar:
+
+```text
+snapshot
++
+delta changes
+```
+
+Ejemplo:
+
+```text
+Snapshot version 100
+        ↓
+Changes 101
+Changes 102
+Changes 103
+```
+
+---
+
+# 124. Change Record
+
+```json
+{
+  "change_id": "01JCHANGE...",
+  "version": 103,
+
+  "operation": "update",
+
+  "entity_id": "light.living_room",
+
+  "path": "/state/brightness",
+
+  "old_value": 50,
+  "new_value": 75
+}
+```
+
+---
+
+# 125. Schema Registry
+
+La plataforma deberá mantener un registro lógico de esquemas.
+
+Conceptualmente:
+
+```text
+schemas/
+├── site.schema.json
+├── zone.schema.json
+├── device.schema.json
+├── resource.schema.json
+├── capability.schema.json
+├── entity.schema.json
+├── state.schema.json
+├── command.schema.json
+├── event.schema.json
+├── scene.schema.json
+├── automation.schema.json
+├── bus-message.schema.json
+└── error.schema.json
+```
+
+---
+
+# 126. JSON Schema
+
+Se recomienda utilizar **JSON Schema** como mecanismo de validación formal.
+
+Por ejemplo:
+
+```text
+schemas/
+└── v1/
+    ├── site.schema.json
+    ├── zone.schema.json
+    ├── device.schema.json
+    ├── entity.schema.json
+    ├── command.schema.json
+    ├── event.schema.json
+    └── bus-message.schema.json
+```
+
+Esto permite validar automáticamente:
+
+```text
+API
+System Bus
+Central
+Nodes
+Tests
+CI/CD
+```
+
+---
+
+# 127. Schema IDs
+
+Cada esquema puede tener un identificador:
+
+```text
+https://platform.local/schema/v1/entity
+```
+
+En dispositivos pequeños no será necesario transportar siempre la URL completa; puede utilizarse:
+
+```text
+schema_id = entity
+schema_version = 1.0
+```
+
+---
+
+# 128. Schema Validation en ESP32
+
+No todos los nodos deberán cargar todos los esquemas completos en RAM.
+
+Se recomienda:
+
+```text
+Central:
+validación completa
+
+Zone Controller:
+validación intermedia
+
+Node:
+validación específica y ligera
+```
+
+Esto permite conservar recursos.
+
+---
+
+# 129. Perfil de capacidad
+
+Cada dispositivo puede anunciar qué esquemas soporta.
+
+```json
+{
+  "schema_support": {
+    "entity": "1.0",
+    "command": "1.0",
+    "event": "1.0"
+  }
+}
+```
+
+---
+
+# 130. Schema Evolution
+
+Los esquemas deberán evolucionar sin romper instalaciones antiguas.
+
+Estrategia:
+
+```text
+1.0
+ ↓
+1.1
+ ↓
+1.2
+ ↓
+2.0
+```
+
+Las versiones menores deben mantener compatibilidad siempre que sea posible.
+
+---
+
+# 131. Migration
+
+Cuando una configuración antigua deba transformarse:
+
+```text
+Old Schema
+   ↓
+Migration
+   ↓
+New Schema
+```
+
+Las migraciones deberán ser explícitas.
+
+---
+
+# 132. Backward Compatibility
+
+Un nodo con firmware antiguo podrá seguir funcionando si recibe una estructura compatible.
+
+Ejemplo:
+
+```text
+Central 1.2
+Node 1.0
+```
+
+La Central deberá poder adaptar mensajes cuando sea necesario.
+
+---
+
+# 133. Forward Compatibility
+
+Un nodo antiguo deberá ignorar campos opcionales desconocidos cuando sea seguro hacerlo.
+
+Ejemplo:
+
+```json
+{
+  "value": 24.5,
+  "unit": "°C",
+  "confidence": 0.98
+}
+```
+
+Un nodo que no entiende `confidence` puede seguir procesando:
+
+```text
+value
+unit
+```
+
+si el campo es opcional.
+
+---
+
+# 134. Required vs Optional
+
+Los esquemas deberán diferenciar:
+
+```text
+required
+optional
+deprecated
+```
+
+Ejemplo:
+
+```text
+entity_id → required
+domain → required
+name → optional
+description → optional
+metadata → optional
+```
+
+---
+
+# 135. Safety-Critical Fields
+
+Algunos campos deben ser obligatorios en contextos críticos.
+
+Por ejemplo:
+
+```text
+safe_state
+timeout
+priority
+authorization
+```
+
+cuando se trate de determinados actuadores.
+
+---
+
+# 136. Schema de seguridad para actuadores
+
+Ejemplo:
+
+```json
+{
+  "safety": {
+    "safe_state": "off",
+    "communication_loss_action": "off",
+    "max_command_duration_ms": 5000
+  }
+}
+```
+
+Los valores concretos dependerán del dispositivo.
+
+---
+
+# 137. Resource Mapping
+
+La relación entre hardware y entidad puede representarse:
+
+```json
+{
+  "entity_id": "light.living_room",
+
+  "resource_mapping": {
+    "resource_id": "gpio_23",
+    "channel": 0
+  }
+}
+```
+
+Esta información debe permanecer principalmente en configuración interna.
+
+---
+
+# 138. Expander Mapping
+
+Ejemplo:
+
+```json
+{
+  "entity_id": "switch.pump",
+
+  "resource_mapping": {
+    "resource_type": "mcp23017",
+    "resource_id": "mcp23017_01",
+    "channel": 4
+  }
+}
+```
+
+La entidad continúa siendo:
+
+```text
+switch.pump
+```
+
+aunque se cambie el expansor.
+
+---
+
+# 139. Multi-resource Entity
+
+Una entidad puede depender de varios recursos.
+
+Ejemplo:
+
+```text
+Motor
+ ├── GPIO enable
+ ├── PWM speed
+ ├── ADC current
+ └── feedback input
+```
+
+Representación:
+
+```json
+{
+  "entity_id": "motor.fan",
+
+  "resources": [
+    "gpio_enable",
+    "pwm_speed",
+    "adc_current",
+    "feedback"
   ]
 }
 ```
 
 ---
 
-# 107. Recommended Schema Directory
+# 140. Capability Composition
 
-La implementación deberá evolucionar hacia:
+Una entidad puede combinar varias capacidades.
+
+Ejemplo:
 
 ```text
-schemas/
-│
-├── common/
-│   ├── id.json
-│   ├── timestamp.json
-│   ├── metadata.json
-│   ├── error.json
-│   ├── source.json
-│   ├── availability.json
-│   └── pagination.json
-│
-├── site/
-│   └── site.json
-│
-├── zone/
-│   └── zone.json
-│
-├── group/
-│   └── group.json
-│
-├── device/
-│   ├── device.json
-│   ├── firmware.json
-│   └── diagnostics.json
-│
-├── resource/
-│   └── resource.json
-│
-├── capability/
-│   └── capability.json
-│
-├── entity/
-│   ├── entity.json
-│   ├── sensor.json
-│   ├── binary-sensor.json
-│   ├── light.json
-│   ├── switch.json
-│   ├── fan.json
-│   ├── cover.json
-│   ├── climate.json
-│   └── camera.json
-│
-├── state/
-│   └── state.json
-│
-├── command/
-│   ├── command.json
-│   └── result.json
-│
-├── event/
-│   └── event.json
-│
-├── function/
-│   └── function.json
-│
-├── scene/
-│   └── scene.json
-│
-├── automation/
-│   ├── automation.json
-│   ├── trigger.json
-│   ├── condition.json
-│   └── action.json
-│
-├── system/
-│   ├── mode.json
-│   ├── health.json
-│   └── status.json
-│
-└── integration/
-    ├── integration.json
-    └── mapping.json
+Light
+├── on_off
+├── brightness
+├── color
+└── temperature
+```
+
+Esto evita crear una entidad diferente para cada característica física.
+
+---
+
+# 141. Device vs Entity
+
+Un dispositivo puede contener muchas entidades:
+
+```text
+Node
+ ├── sensor.temperature
+ ├── sensor.humidity
+ ├── light.main
+ ├── switch.fan
+ └── binary_sensor.motion
+```
+
+No se deberá confundir:
+
+```text
+device
+```
+
+con:
+
+```text
+entity
 ```
 
 ---
 
-# 108. Validation Pipeline
+# 142. Resource vs Entity
 
-Todos los datos externos deben atravesar:
+Un recurso representa:
+
+> qué hardware existe.
+
+Una entidad representa:
+
+> qué función lógica existe.
+
+Ejemplo:
 
 ```text
-             INPUT
-               │
-               ▼
-       ┌─────────────────┐
-       │ JSON / Encoding │
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Schema Validation│
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Semantic Check  │
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Permission Check│
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Safety Limits   │
-       └────────┬────────┘
-                ▼
-       ┌─────────────────┐
-       │ Model Accepted  │
-       └─────────────────┘
+GPIO23
+   ↓
+Resource
+   ↓
+switch.pump
+   ↓
+Entity
 ```
 
 ---
 
-# 109. What Must Never Happen
+# 143. Capability vs Entity
 
-El diseño debe impedir que el sistema termine dependiendo de estructuras como:
+Una capability representa:
+
+> qué puede hacer algo.
+
+La entidad representa:
+
+> el objeto lógico que utiliza esa capacidad.
+
+Ejemplo:
+
+```text
+light.living_room
+   ├── on_off
+   └── brightness
+```
+
+---
+
+# 144. State Ownership
+
+El estado debe tener un origen.
+
+Ejemplo:
 
 ```json
 {
-  "gpio": 12,
-  "value": true
+  "source": {
+    "device_id": "node_001",
+    "authority": "device"
+  }
 }
 ```
 
-como representación principal de una función.
+Esto evita que Central sobrescriba arbitrariamente un estado físico real.
 
-Tampoco:
+---
+
+# 145. State Conflict
+
+Si existen:
+
+```text
+desired = ON
+actual = OFF
+```
+
+el sistema debe poder representar:
+
+```text
+state_conflict
+```
+
+o:
+
+```text
+pending
+```
+
+según el caso.
+
+---
+
+# 146. Command Authorization Context
+
+Los comandos pueden transportar:
 
 ```json
 {
-  "mqtt_topic": "home/light/1",
-  "value": true
+  "source": {
+    "type": "user",
+    "id": "user_001"
+  },
+
+  "authorization": {
+    "role": "admin",
+    "scope": "device_control"
+  }
 }
 ```
 
-ni:
+No todos los transportes deberán transportar necesariamente todos estos campos.
+
+---
+
+# 147. Audit Data
+
+Operaciones sensibles pueden registrar:
 
 ```json
 {
-  "modbus_register": 40001,
-  "value": 120
+  "audit": {
+    "actor_type": "user",
+    "actor_id": "user_001",
+    "action": "unlock",
+    "timestamp": "2026-10-06T12:00:00Z"
+  }
 }
 ```
 
-Estas estructuras pueden existir en capas específicas, pero no son el modelo lógico.
+---
 
-La representación correcta es:
+# 148. Correlation
+
+Una operación completa puede tener:
+
+```text
+request_id
+command_id
+message_id
+event_id
+correlation_id
+```
+
+Ejemplo:
+
+```text
+request_id
+   │
+   └── command_id
+          │
+          ├── message_id
+          ├── ACK
+          └── STATE
+```
+
+El `correlation_id` permite relacionarlos.
+
+---
+
+# 149. Idempotency
+
+Los comandos externos deberán poder utilizar:
+
+```text
+idempotency_key
+```
+
+Ejemplo:
 
 ```json
 {
-  "entity_id": "light.living.main",
+  "command": "turn_on",
+  "idempotency_key": "user-123-command-456"
+}
+```
+
+Si la misma operación llega dos veces:
+
+```text
+execute once
+return existing result
+```
+
+---
+
+# 150. Retry Metadata
+
+Los mensajes pueden incluir:
+
+```json
+{
+  "retry": {
+    "attempt": 2,
+    "max_attempts": 3
+  }
+}
+```
+
+Esta información puede ser interna y no necesariamente visible para API pública.
+
+---
+
+# 151. Timeout Metadata
+
+```json
+{
+  "timeout": {
+    "deadline": "2026-10-06T12:00:05Z"
+  }
+}
+```
+
+o, para dispositivos sin reloj válido:
+
+```json
+{
+  "timeout_ms": 5000
+}
+```
+
+---
+
+# 152. Compression
+
+Para mensajes grandes podrá utilizarse:
+
+```text
+gzip
+deflate
+CBOR
+MessagePack
+```
+
+según el transporte.
+
+La compresión no deberá modificar el esquema lógico.
+
+---
+
+# 153. Binary Payload
+
+En determinados casos podrá utilizarse:
+
+```json
+{
+  "encoding": "binary",
+  "content_type": "application/octet-stream"
+}
+```
+
+Esto puede ser útil para:
+
+* imágenes;
+* firmware;
+* archivos;
+* grandes bloques de datos.
+
+No debe utilizarse para mensajes normales.
+
+---
+
+# 154. Image / Camera Data
+
+Una entidad de cámara normalmente no deberá transportar una imagen completa mediante el System Bus.
+
+Preferentemente:
+
+```text
+System Bus
+    ↓
+camera event
+    ↓
+reference / URI
+```
+
+Ejemplo:
+
+```json
+{
+  "event_type": "object_detected",
+
+  "data": {
+    "object": "person",
+    "confidence": 0.97,
+    "snapshot_ref": "storage://snapshot/01J..."
+  }
+}
+```
+
+---
+
+# 155. Large Data Rule
+
+Regla:
+
+> **El System Bus transporta eventos, estados, comandos y referencias; no debe utilizarse como almacenamiento general de grandes archivos.**
+
+---
+
+# 156. Storage Reference
+
+Los archivos podrán referenciarse mediante:
+
+```text
+storage://
+http://
+https://
+local://
+```
+
+según la arquitectura.
+
+La seguridad y autorización deberán validarse antes de acceder.
+
+---
+
+# 157. API Pagination
+
+Cuando los esquemas se utilicen en API, las colecciones deberán soportar:
+
+```text
+limit
+cursor
+offset
+```
+
+Se recomienda cursor para instalaciones grandes.
+
+Ejemplo:
+
+```json
+{
+  "items": [],
+  "next_cursor": "abc123"
+}
+```
+
+---
+
+# 158. Filtering
+
+Ejemplo:
+
+```text
+entities?zone_id=zone_living
+```
+
+o:
+
+```text
+entities?domain=light
+```
+
+o:
+
+```text
+entities?device_id=node_001
+```
+
+Los filtros deben operar sobre entidades lógicas.
+
+---
+
+# 159. Sorting
+
+Las colecciones pueden permitir:
+
+```text
+name
+created_at
+updated_at
+entity_id
+```
+
+La API deberá documentar los campos soportados.
+
+---
+
+# 160. Schema de Collection
+
+```json
+{
+  "items": [],
+  "count": 10,
+  "next_cursor": "abc123"
+}
+```
+
+No es necesario enviar `count` total si calcularlo es costoso.
+
+---
+
+# 161. WebSocket Event Schema
+
+Los eventos enviados por WebSocket deberán utilizar el mismo formato conceptual:
+
+```json
+{
+  "type": "event",
+  "event": {
+    "event_id": "01J...",
+    "event_type": "state_changed",
+    "entity_id": "light.living_room"
+  }
+}
+```
+
+---
+
+# 162. API vs Bus Envelope
+
+La API pública puede ocultar parte del envelope interno.
+
+Por ejemplo, una API puede recibir:
+
+```json
+{
   "command": "turn_on"
 }
 ```
 
-y cada capa se encarga de traducirlo.
+y generar internamente:
+
+```text
+Bus Envelope
++
+Command Payload
+```
+
+Esto evita exponer detalles internos innecesarios.
 
 ---
 
-# 110. Modelo definitivo
+# 163. Public vs Internal Schema
 
-La relación fundamental queda establecida como:
+Se podrán definir:
 
 ```text
-┌─────────────────────────────┐
-│          HARDWARE           │
-└──────────────┬──────────────┘
-               ↓
-┌─────────────────────────────┐
-│          RESOURCE           │
-└──────────────┬──────────────┘
-               ↓
-┌─────────────────────────────┐
-│         CAPABILITY          │
-└──────────────┬──────────────┘
-               ↓
-┌─────────────────────────────┐
-│           ENTITY            │
-└──────────────┬──────────────┘
-               ↓
-        ┌──────┴──────┐
-        ↓             ↓
-      STATE         EVENT
-        ↓             ↓
-     COMMAND      AUTOMATION
-        │             │
-        └──────┬──────┘
-               ↓
-       FUNCTION / SCENE
-               ↓
-          INTEGRATION
-               ↓
-      External Ecosystem
+Internal Schema
+Public API Schema
+Integration Schema
+```
+
+Pero todos deberán derivar del mismo modelo conceptual.
+
+---
+
+# 164. Regla de no duplicación
+
+No se deberán crear estructuras diferentes para representar el mismo concepto sin necesidad.
+
+Por ejemplo:
+
+```text
+TemperatureState
+WeatherTemperature
+SensorTemperature
+ApiTemperature
+MqttTemperature
+```
+
+no deben convertirse en cinco modelos independientes.
+
+Debe existir un concepto canónico:
+
+```text
+Temperature State
+```
+
+y adaptadores.
+
+---
+
+# 165. Schema Registry Structure
+
+Estructura recomendada:
+
+```text
+schemas/
+├── v1/
+│   ├── common/
+│   │   ├── identifier.schema.json
+│   │   ├── timestamp.schema.json
+│   │   ├── quality.schema.json
+│   │   └── provenance.schema.json
+│   │
+│   ├── entities/
+│   │   ├── entity.schema.json
+│   │   ├── sensor.schema.json
+│   │   ├── light.schema.json
+│   │   └── switch.schema.json
+│   │
+│   ├── commands/
+│   │   └── command.schema.json
+│   │
+│   ├── events/
+│   │   └── event.schema.json
+│   │
+│   ├── bus/
+│   │   └── message.schema.json
+│   │
+│   └── errors/
+│       └── error.schema.json
+│
+└── v2/
 ```
 
 ---
 
-# 111. Regla de oro
+# 166. Common Schema Components
 
-> **El hardware proporciona recursos. Los recursos proporcionan capacidades. Las capacidades forman entidades. Las entidades tienen estados, reciben comandos y generan eventos. Las funciones, escenas y automatizaciones utilizan esas entidades. Las integraciones exponen el mismo modelo hacia sistemas externos.**
+Se recomienda reutilizar componentes:
+
+```text
+identifier
+timestamp
+entity_reference
+device_reference
+zone_reference
+quality
+unit
+source
+provenance
+metadata
+```
+
+Esto evita duplicación.
 
 ---
 
-# 112. Próximos documentos
+# 167. Entity Reference
 
-Este documento habilita formalmente los siguientes:
+Cuando no sea necesario incluir una entidad completa:
+
+```json
+{
+  "entity_id": "light.living_room"
+}
+```
+
+No deberá repetirse todo el objeto Entity.
+
+---
+
+# 168. Device Reference
+
+```json
+{
+  "device_id": "node_001"
+}
+```
+
+---
+
+# 169. Zone Reference
+
+```json
+{
+  "zone_id": "zone_living"
+}
+```
+
+---
+
+# 170. Reference vs Embedded Object
+
+Se recomienda utilizar referencias para objetos grandes o reutilizados.
+
+Ejemplo:
+
+```json
+{
+  "device_id": "node_001"
+}
+```
+
+en lugar de:
+
+```json
+{
+  "device": {
+    "device_id": "...",
+    "name": "...",
+    "resources": [...]
+  }
+}
+```
+
+salvo que se solicite explícitamente una expansión.
+
+---
+
+# 171. Expand
+
+La API podrá permitir:
 
 ```text
+?include=device
+```
+
+o:
+
+```text
+?include=state
+```
+
+según el endpoint.
+
+Esto permite equilibrar tamaño de respuesta y facilidad de uso.
+
+---
+
+# 172. Data Ownership
+
+Cada dato debe tener un propietario lógico.
+
+Ejemplo:
+
+| Dato                   | Autoridad               |
+| ---------------------- | ----------------------- |
+| GPIO actual            | Node                    |
+| sensor value           | Sensor Node             |
+| local automation state | Node/Zone               |
+| global configuration   | Central                 |
+| user account           | Central                 |
+| external weather       | Provider                |
+| Matter state           | Matter adapter / device |
+
+---
+
+# 173. Source of Truth
+
+La plataforma deberá definir claramente:
+
+```text
+Configuration Source of Truth
+State Source of Truth
+Identity Source of Truth
+History Source of Truth
+```
+
+Esto evita conflictos.
+
+---
+
+# 174. Configuration Source of Truth
+
+Generalmente:
+
+```text
+Central
+```
+
+para configuración global.
+
+Pero un nodo deberá mantener una copia local válida para continuar operando.
+
+---
+
+# 175. State Source of Truth
+
+Para hardware físico:
+
+```text
+Node / Device
+```
+
+Central mantiene una representación sincronizada.
+
+---
+
+# 176. Identity Source of Truth
+
+Normalmente:
+
+```text
+Central
+```
+
+pero el nodo debe conservar su identidad local.
+
+---
+
+# 177. History Source of Truth
+
+Puede variar:
+
+```text
+Node
+Zone Controller
+Central
+External storage
+```
+
+según el nivel de almacenamiento disponible.
+
+---
+
+# 178. Data Retention
+
+Cada tipo de información podrá tener una política:
+
+```text
+telemetry: 30 days
+events: 90 days
+critical events: 1 year
+diagnostics: 7 days
+```
+
+Los valores son configurables y solo representan ejemplos.
+
+---
+
+# 179. Privacy
+
+Los datos que puedan representar información sensible deberán clasificarse.
+
+Ejemplo:
+
+```text
+occupancy
+camera events
+presence
+access events
+security events
+```
+
+La plataforma deberá permitir limitar:
+
+```text
+storage
+API exposure
+integration exposure
+user access
+```
+
+---
+
+# 180. Performance
+
+En ESP32 deberán evitarse objetos excesivamente grandes.
+
+Preferir:
+
+```text
+small messages
+references
+compact schemas
+incremental updates
+```
+
+antes que snapshots permanentes.
+
+---
+
+# 181. RAM Management
+
+Los nodos deberán poder trabajar con estructuras parciales.
+
+Por ejemplo:
+
+```text
+Node:
+Entity State only
+
+Central:
+Full Entity Model
+```
+
+Esto permite escalar a diferentes capacidades de hardware.
+
+---
+
+# 182. Serialization Strategy
+
+La serialización deberá estar desacoplada:
+
+```text
+Object
+ ↓
+Serializer
+ ├── JSON
+ ├── CBOR
+ ├── MessagePack
+ └── Protobuf
+```
+
+La lógica del objeto no debe conocer el formato.
+
+---
+
+# 183. Deserialization
+
+Los datos externos deberán pasar por:
+
+```text
+Raw Data
+ ↓
+Parser
+ ↓
+Schema Validation
+ ↓
+Canonical Object
+ ↓
+System Bus / Application
+```
+
+Nunca:
+
+```text
+Raw JSON
+ ↓
+GPIO
+```
+
+directamente.
+
+---
+
+# 184. Security Boundary
+
+La validación deberá realizarse antes de ejecutar acciones.
+
+```text
+Receive
+ ↓
+Parse
+ ↓
+Validate
+ ↓
+Authenticate
+ ↓
+Authorize
+ ↓
+Validate business rules
+ ↓
+Execute
+```
+
+---
+
+# 185. Business Validation
+
+Un valor puede ser sintácticamente correcto pero lógicamente inválido.
+
+Ejemplo:
+
+```json
+{
+  "position": 50
+}
+```
+
+es válido sintácticamente.
+
+Pero si una válvula está bloqueada:
+
+```text
+business rule → reject
+```
+
+---
+
+# 186. Safety Validation
+
+Incluso un comando autorizado puede ser rechazado por seguridad.
+
+Ejemplo:
+
+```text
+set_motor_speed = 5000 rpm
+```
+
+si:
+
+```text
+max_speed = 3000 rpm
+```
+
+Resultado:
+
+```text
+COMMAND_REJECTED
+```
+
+---
+
+# 187. Data Schema Golden Rules
+
+1. Todo objeto importante debe tener versión.
+2. Los IDs deben ser estables.
+3. Las unidades deben ser explícitas.
+4. Los estados deben diferenciarse de los comandos.
+5. Los eventos deben diferenciarse de los estados.
+6. Los datos físicos no deben filtrarse innecesariamente a la capa lógica.
+7. Los esquemas deben poder validarse.
+8. Las extensiones deben ser compatibles.
+9. Los errores deben tener formato uniforme.
+10. Las integraciones deben adaptar el modelo, no modificarlo.
+
+---
+
+# 188. Flujo completo de datos
+
+```text
+Hardware
+   ↓
+Driver
+   ↓
+Resource
+   ↓
+Capability
+   ↓
+Entity
+   ↓
+Canonical Schema
+   ↓
+System Bus
+   ↓
+Transport
+   ↓
+Node / Zone / Central
+   ↓
+API / Integration
+```
+
+---
+
+# 189. Flujo de un sensor
+
+```text
+AHT20
+ ↓
+Driver
+ ↓
+Resource
+ ↓
+Capability: temperature
+ ↓
+Entity:
+sensor.living.temperature
+ ↓
+State Schema
+ ↓
+System Bus
+ ↓
+Central
+ ↓
+REST / WebSocket / MQTT / Matter
+```
+
+---
+
+# 190. Flujo de un actuador
+
+```text
+API
+ ↓
+Command Schema
+ ↓
+Authorization
+ ↓
+System Bus
+ ↓
+Transport
+ ↓
+Node
+ ↓
+Module
+ ↓
+Driver
+ ↓
+GPIO / PWM / Relay
+ ↓
+Actual State
+ ↓
+State Schema
+ ↓
+System Bus
+```
+
+---
+
+# 191. Flujo de una automatización
+
+```text
+Event
+ ↓
+Event Schema
+ ↓
+System Bus
+ ↓
+Automation Engine
+ ↓
+Condition
+ ↓
+Action
+ ↓
+Command Schema
+ ↓
+System Bus
+ ↓
+Actuator
+```
+
+---
+
+# 192. Flujo de sincronización
+
+```text
+Node reconnect
+      ↓
+Discovery
+      ↓
+Device Schema
+      ↓
+Configuration Version
+      ↓
+State Version
+      ↓
+Delta / Snapshot
+      ↓
+Reconciliation
+      ↓
+Normal operation
+```
+
+---
+
+# 193. Estructura final de esquemas
+
+La implementación deberá evolucionar hacia una estructura similar a:
+
+```text
+schemas/
+├── v1/
+│
+├── common/
+│   ├── identifiers
+│   ├── timestamps
+│   ├── units
+│   ├── quality
+│   ├── provenance
+│   └── references
+│
+├── topology/
+│   ├── site
+│   ├── zone
+│   └── group
+│
+├── hardware/
+│   ├── device
+│   ├── resource
+│   └── capability
+│
+├── entities/
+│   ├── entity
+│   ├── state
+│   └── entity-types
+│
+├── automation/
+│   ├── function
+│   ├── scene
+│   ├── automation
+│   ├── trigger
+│   ├── condition
+│   └── action
+│
+├── communication/
+│   ├── command
+│   ├── event
+│   ├── telemetry
+│   ├── discovery
+│   ├── response
+│   └── bus-message
+│
+├── configuration/
+│   ├── config
+│   ├── config-patch
+│   └── synchronization
+│
+├── diagnostics/
+│   ├── health
+│   ├── metrics
+│   └── error
+│
+└── integrations/
+    └── ...
+```
+
+---
+
+# 194. Principio de interoperabilidad
+
+Todos los subsistemas deberán utilizar el mismo lenguaje conceptual:
+
+```text
+Device
+Resource
+Capability
+Entity
+State
+Command
+Event
+Function
+Scene
+Automation
+Zone
+Group
+```
+
+Esto permite que:
+
+```text
+ESP32
+Central
+Web UI
+Mobile App
+REST API
+MQTT
+Matter
+Home Assistant
+AI
+```
+
+puedan trabajar sobre el mismo modelo.
+
+---
+
+# 195. Principio de evolución
+
+Los esquemas deberán permitir que la plataforma evolucione desde:
+
+```text
+1 ESP32
+```
+
+hasta:
+
+```text
+1 Central
++
+10 Zones
++
+100 Nodes
+```
+
+o incluso instalaciones mayores, sin cambiar los conceptos fundamentales.
+
+---
+
+# 196. Principio de portabilidad
+
+Los esquemas no deben depender de:
+
+```text
+ESP32
+FreeRTOS
+PlatformIO
+Wi-Fi
+Ethernet
+CAN
+RS485
+```
+
+La plataforma puede implementar posteriormente otros microcontroladores o sistemas.
+
+El modelo de datos deberá permanecer válido.
+
+---
+
+# 197. Principio de abstracción
+
+La capa superior debe poder preguntar:
+
+```text
+"¿Cuál es la temperatura del living?"
+```
+
+y no:
+
+```text
+"¿Qué valor tiene ADC1 del GPIO34 del ESP32 ubicado en node_03?"
+```
+
+De la misma manera:
+
+```text
+"Enciende la luz del living"
+```
+
+y no:
+
+```text
+"Pon GPIO23 en HIGH."
+```
+
+---
+
+# 198. Principio final
+
+La arquitectura de datos completa queda:
+
+```text
+┌────────────────────────────────────┐
+│             HARDWARE               │
+└──────────────────┬─────────────────┘
+                   ↓
+┌────────────────────────────────────┐
+│             RESOURCE               │
+└──────────────────┬─────────────────┘
+                   ↓
+┌────────────────────────────────────┐
+│           CAPABILITY               │
+└──────────────────┬─────────────────┘
+                   ↓
+┌────────────────────────────────────┐
+│              ENTITY                │
+└──────────────────┬─────────────────┘
+                   ↓
+┌────────────────────────────────────┐
+│          CANONICAL STATE           │
+└──────────────────┬─────────────────┘
+                   ↓
+┌────────────────────────────────────┐
+│           SYSTEM BUS               │
+└──────────────────┬─────────────────┘
+                   ↓
+       ┌───────────┼───────────┐
+       ↓           ↓           ↓
+      API        MQTT        Matter
+       ↓           ↓           ↓
+   External    External    External
+   Clients     Systems     Ecosystems
+```
+
+---
+
+# 199. Reglas de oro de DATA-SCHEMAS
+
+> **1. El modelo canónico es único.**
+
+> **2. Hardware y lógica están separados.**
+
+> **3. Entity IDs son estables y no dependen del hardware.**
+
+> **4. Commands expresan intenciones.**
+
+> **5. States representan realidad conocida.**
+
+> **6. Events representan hechos ocurridos.**
+
+> **7. Resources representan hardware.**
+
+> **8. Capabilities representan capacidades.**
+
+> **9. Las unidades deben ser explícitas.**
+
+> **10. Los esquemas deben estar versionados.**
+
+> **11. Los mensajes deben poder validarse.**
+
+> **12. Las integraciones son adaptadores.**
+
+> **13. Los transportes no deben modificar la semántica.**
+
+> **14. La información crítica debe tener autoridad y procedencia claras.**
+
+> **15. El sistema debe poder evolucionar sin romper nodos existentes.**
+
+---
+
+# 200. Principio final de arquitectura
+
+> **Hardware proporciona Resources.**
+>
+> **Resources proporcionan Capabilities.**
+>
+> **Capabilities forman Entities.**
+>
+> **Entities tienen States, reciben Commands y generan Events.**
+>
+> **Functions, Scenes y Automations utilizan esas Entities.**
+>
+> **El System Bus transporta estos mensajes.**
+>
+> **La API y las Integraciones exponen el mismo modelo hacia el exterior.**
+>
+> **El transporte físico nunca debe convertirse en la lógica de la aplicación.**
+
+Este principio constituye la base común sobre la que deberán construirse:
+
+```text
+MODULE-DEVELOPMENT.md
+DEVICE-MODEL.md
 DATA-MODEL.md
-       │
-       ▼
-DATA-SCHEMAS.md
-       │
-       ├───────────────┐
-       ▼               ▼
-SYSTEM-BUS.md      DATABASE-STORAGE.md
-       │
-       ▼
+SYSTEM-BUS.md
 API-SPECIFICATION.md
-       │
-       ▼
-DISCOVERY-PROVISIONING.md
-       │
-       ▼
-EVENT-MODEL.md
-       │
-       ▼
-CONFIGURATION-MODEL.md
-       │
-       ▼
-AUTOMATION-ENGINE.md
-       │
-       ▼
-TESTING-VALIDATION.md
+SMART-HOME-INTEGRATION.md
 ```
 
----
-
-# 113. Estado del documento
-
-```text
-Estado: Diseño aprobado como base conceptual
-
-Definido:
-- modelo de IDs
-- versionado
-- timestamps
-- Site
-- Zone
-- Group
-- Device
-- Resource
-- Capability
-- Entity
-- State
-- Command
-- Event
-- Function
-- Scene
-- Automation
-- Trigger
-- Condition
-- Action
-- System Mode
-- Error
-- Availability
-- Configuration
-- History
-- Diagnostics
-- Virtual entities
-- External entities
-- AI entities
-- Validation
-- extensibilidad
-- compatibilidad
-- seguridad conceptual
-- sincronización
-- estado deseado/real
-
-Pendiente de implementación:
-- JSON Schemas definitivos
-- validadores
-- catálogo de domains
-- catálogo de capabilities
-- catálogo de device classes
-- catálogo de unidades
-- políticas definitivas de versionado
-- serialización binaria
-- persistencia
-- System Bus
-- API
-```
-
----
-
-# 114. Principio arquitectónico final
-
-La plataforma debe ser capaz de evolucionar de:
-
-```text
-ESP32 + Relay
-```
-
-a:
-
-```text
-ESP32 + sensores
-```
-
-a:
-
-```text
-ESP32-S3 + cámara + IA
-```
-
-a:
-
-```text
-múltiples zonas
-```
-
-a:
-
-```text
-Central + Nodes + Integraciones
-```
-
-sin modificar el significado fundamental de los datos.
-
-La arquitectura debe permitir:
-
-```text
-Hardware diferente
-       ↓
-Mismo Data Model
-       ↓
-Misma API
-       ↓
-Mismo System Bus
-       ↓
-Mismas automatizaciones
-       ↓
-Mismas integraciones
-```
-
-> **El modelo de datos es el contrato que permite que toda la plataforma evolucione sin romper su arquitectura.**
+y las futuras implementaciones de firmware.
